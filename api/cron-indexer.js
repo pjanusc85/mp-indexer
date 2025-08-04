@@ -33,8 +33,8 @@ async function getLastIndexedBlock() {
 
 async function updateLastIndexedBlock(blockNumber) {
   try {
-    // Update the existing record (id=1) instead of creating new ones
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?id=eq.1`, {
+    // First, try to update the existing record
+    const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?id=eq.1`, {
       method: 'PATCH',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
@@ -48,15 +48,35 @@ async function updateLastIndexedBlock(blockNumber) {
       })
     });
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+    if (updateResponse.ok) {
+      console.log(`✅ Updated indexer state to block ${blockNumber}`);
+      return;
     }
     
-    console.log(`✅ Updated indexer state to block ${blockNumber}`);
+    // If PATCH fails, try using RPC call
+    console.log('PATCH failed, trying RPC approach...');
+    const rpcResponse = await fetch(`${SUPABASE_URL}/rest/v1/rpc/update_indexer_state`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        new_block: blockNumber
+      })
+    });
+    
+    if (rpcResponse.ok) {
+      console.log(`✅ Updated indexer state via RPC to block ${blockNumber}`);
+    } else {
+      const errorText = await rpcResponse.text();
+      throw new Error(`RPC call failed! status: ${rpcResponse.status}, body: ${errorText}`);
+    }
+    
   } catch (error) {
-    console.error('Error updating last indexed block:', error);
-    throw error; // Re-throw to see the error in logs
+    console.error('❌ Error updating last indexed block:', error);
+    // Don't throw - let the indexer continue even if state update fails
   }
 }
 
