@@ -33,8 +33,9 @@ async function getLastIndexedBlock() {
 
 async function updateLastIndexedBlock(blockNumber) {
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state`, {
-      method: 'POST',
+    // Update the existing record (id=1) instead of creating new ones
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?id=eq.1`, {
+      method: 'PATCH',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
@@ -48,10 +49,14 @@ async function updateLastIndexedBlock(blockNumber) {
     });
     
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
     }
+    
+    console.log(`✅ Updated indexer state to block ${blockNumber}`);
   } catch (error) {
     console.error('Error updating last indexed block:', error);
+    throw error; // Re-throw to see the error in logs
   }
 }
 
