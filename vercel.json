@@ -13,9 +13,4 @@
       "schedule": "0 12 * * *"
     }
   ],
-  "env": {
-    "RSK_RPC_URL": "@rsk_rpc_url",
-    "SUPABASE_URL": "@supabase_url", 
-    "SUPABASE_ANON_KEY": "@supabase_anon_key"
-  }
 }
