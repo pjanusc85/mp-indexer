@@ -14,9 +14,13 @@ export default async function handler(req, res) {
       hasRskUrl: !!process.env.RSK_RPC_URL,
       hasSupabaseUrl: !!process.env.SUPABASE_URL,
       hasSupabaseKey: !!process.env.SUPABASE_ANON_KEY,
+      hasVaultManager: !!process.env.VAULT_MANAGER_ADDRESS,
+      hasSortedVaults: !!process.env.SORTED_VAULTS_ADDRESS,
       rskUrl: process.env.RSK_RPC_URL?.substring(0, 20) + '...' || 'Not set',
       supabaseUrl: process.env.SUPABASE_URL?.substring(0, 30) + '...' || 'Not set',
       supabaseKey: process.env.SUPABASE_ANON_KEY?.substring(0, 20) + '...' || 'Not set',
+      vaultManager: process.env.VAULT_MANAGER_ADDRESS || 'Using fallback',
+      sortedVaults: process.env.SORTED_VAULTS_ADDRESS || 'Using fallback',
       timestamp: new Date().toISOString(),
       nodeEnv: process.env.NODE_ENV || 'unknown'
     };
