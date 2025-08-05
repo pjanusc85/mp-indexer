@@ -162,7 +162,9 @@ export default async function handler(req, res) {
     const lastIndexedBlock = await getLastIndexedBlock();
     
     const fromBlock = lastIndexedBlock ? lastIndexedBlock + 1 : currentBlock - 100;
-    const toBlock = currentBlock;
+    // Limit to max 500 blocks per run to avoid timeout
+    const maxBlocksPerRun = 500;
+    const toBlock = Math.min(currentBlock, fromBlock + maxBlocksPerRun - 1);
     
     console.log(`Current block: ${currentBlock}, Last indexed: ${lastIndexedBlock}`);
     console.log(`Processing blocks ${fromBlock} to ${toBlock}`);
