@@ -1,11 +1,11 @@
 import { ethers } from 'ethers';
 
-const RPC_URL = process.env.RSK_RPC_URL || 'https://www.intrinsic.network';
+const RPC_URL = process.env.RSK_RPC_URL || 'https://public-node.testnet.rsk.co';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
 const CONTRACTS = {
-  vaultManager: process.env.VAULT_MANAGER_ADDRESS || '0x54F2712Fd31Fc81A47D014727C12F26ba24Feec2',
+  vaultManager: process.env.VAULT_MANAGER_ADDRESS || '0x0eccca821f078f394f2bb1f3d615ad73729a9892',
   sortedVaults: process.env.SORTED_VAULTS_ADDRESS || '0xDBA59981bda70CCBb5458e907f5A0729F1d24a05'
 };
 
@@ -105,44 +105,67 @@ async function processVaultEvents(fromBlock, toBlock) {
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   let eventsProcessed = 0;
   
-  for (const [contractName, contractAddress] of Object.entries(CONTRACTS)) {
+  console.log(`Processing blocks ${fromBlock} to ${toBlock} (block-scanning mode)`);
+  
+  // Process each block individually since RSK testnet doesn't support eth_getLogs
+  for (let blockNumber = fromBlock; blockNumber <= toBlock; blockNumber++) {
     try {
-      console.log(`Processing ${contractName} from block ${fromBlock} to ${toBlock}`);
+      const block = await provider.getBlock(blockNumber, true);
+      if (!block || !block.transactions) {
+        continue;
+      }
       
-      const logs = await provider.getLogs({
-        address: contractAddress,
-        fromBlock: fromBlock,
-        toBlock: toBlock
-      });
+      console.log(`Scanning block ${blockNumber} with ${block.transactions.length} transactions`);
       
-      for (const log of logs) {
-        const eventType = Object.keys(EVENT_SIGNATURES).find(key => 
-          EVENT_SIGNATURES[key] === log.topics[0]
-        );
-        
-        if (eventType) {
-          const block = await provider.getBlock(log.blockNumber);
+      // Check each transaction for events
+      for (const txHash of block.transactions) {
+        try {
+          const receipt = await provider.getTransactionReceipt(txHash);
+          if (!receipt || !receipt.logs) {
+            continue;
+          }
           
-          const eventData = {
-            contract_address: log.address.toLowerCase(),
-            event_type: eventType,
-            transaction_hash: log.transactionHash,
-            block_number: log.blockNumber,
-            timestamp: new Date(block.timestamp * 1000).toISOString(),
-            topics: log.topics,
-            data: log.data,
-            vault_id: log.topics[1] || null,
-            processed_at: new Date().toISOString()
-          };
-          
-          await saveVaultEvent(eventData);
-          eventsProcessed++;
-          
-          console.log(`Saved ${eventType} event for vault ${eventData.vault_id} at block ${log.blockNumber}`);
+          // Check logs in this transaction
+          for (const log of receipt.logs) {
+            // Check if this log is from one of our target contracts
+            const isTargetContract = Object.values(CONTRACTS).some(addr => 
+              addr.toLowerCase() === log.address.toLowerCase()
+            );
+            
+            if (!isTargetContract) {
+              continue;
+            }
+            
+            // Check if this is one of our target events
+            const eventType = Object.keys(EVENT_SIGNATURES).find(key => 
+              EVENT_SIGNATURES[key] === log.topics[0]
+            );
+            
+            if (eventType) {
+              const eventData = {
+                contract_address: log.address.toLowerCase(),
+                event_type: eventType,
+                transaction_hash: log.transactionHash,
+                block_number: log.blockNumber,
+                timestamp: new Date(block.timestamp * 1000).toISOString(),
+                topics: log.topics,
+                data: log.data,
+                vault_id: log.topics[1] || null,
+                processed_at: new Date().toISOString()
+              };
+              
+              await saveVaultEvent(eventData);
+              eventsProcessed++;
+              
+              console.log(`Saved ${eventType} event for vault ${eventData.vault_id} at block ${blockNumber}`);
+            }
+          }
+        } catch (error) {
+          console.error(`Error processing transaction ${txHash}:`, error);
         }
       }
     } catch (error) {
-      console.error(`Error processing ${contractName}:`, error);
+      console.error(`Error processing block ${blockNumber}:`, error);
     }
   }
   
