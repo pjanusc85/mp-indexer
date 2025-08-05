@@ -41,6 +41,7 @@ async function processBlockRange(fromBlock, toBlock) {
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   let eventsProcessed = 0;
   const errors = [];
+  const debugInfo = [];
   
   console.log(`Processing blocks ${fromBlock} to ${toBlock} (block-scanning mode)`);
   
@@ -57,6 +58,8 @@ async function processBlockRange(fromBlock, toBlock) {
       if (blockNumber === 3141681) {
         console.log(`🔍 SPECIAL DEBUG for block 3141681:`);
         console.log(`Transactions: ${JSON.stringify(block.transactions)}`);
+        debugInfo.push(`Block ${blockNumber}: ${block.transactions.length} transactions`);
+        debugInfo.push(`Transactions: ${JSON.stringify(block.transactions)}`);
       }
       
       // Check each transaction for events  
@@ -72,6 +75,7 @@ async function processBlockRange(fromBlock, toBlock) {
           for (const log of receipt.logs) {
             if (blockNumber === 3141681) {
               console.log(`  Log address: ${log.address}, topic0: ${log.topics[0]}`);
+              debugInfo.push(`  Log: ${log.address} -> ${log.topics[0]}`);
             }
             
             // Check if this log is from one of our target contracts
@@ -127,7 +131,7 @@ async function processBlockRange(fromBlock, toBlock) {
     }
   }
   
-  return { eventsProcessed, errors };
+  return { eventsProcessed, errors, debugInfo };
 }
 
 export default async function handler(req, res) {
@@ -170,6 +174,7 @@ export default async function handler(req, res) {
       blocksProcessed: blockRange,
       eventsProcessed: result.eventsProcessed,
       errors: result.errors,
+      debugInfo: result.debugInfo,
       success: result.errors.length === 0
     });
     
