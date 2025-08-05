@@ -118,7 +118,8 @@ async function processVaultEvents(fromBlock, toBlock) {
       console.log(`Scanning block ${blockNumber} with ${block.transactions.length} transactions`);
       
       // Check each transaction for events
-      for (const txHash of block.transactions) {
+      for (const tx of block.transactions) {
+        const txHash = typeof tx === 'string' ? tx : tx.hash;
         try {
           const receipt = await provider.getTransactionReceipt(txHash);
           if (!receipt || !receipt.logs) {
