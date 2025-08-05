@@ -154,6 +154,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
   
+  // Set timeout to 8 seconds (2 seconds buffer before Vercel's 10s limit)
+  const timeoutMs = 8000;
+  const startTime = Date.now();
+  
   try {
     console.log('🚀 Starting cron indexer job');
     
@@ -162,8 +166,8 @@ export default async function handler(req, res) {
     const lastIndexedBlock = await getLastIndexedBlock();
     
     const fromBlock = lastIndexedBlock ? lastIndexedBlock + 1 : currentBlock - 100;
-    // Limit to max 500 blocks per run to avoid timeout
-    const maxBlocksPerRun = 500;
+    // Limit to max 100 blocks per run to avoid timeout (very conservative)
+    const maxBlocksPerRun = 100;
     const toBlock = Math.min(currentBlock, fromBlock + maxBlocksPerRun - 1);
     
     console.log(`Current block: ${currentBlock}, Last indexed: ${lastIndexedBlock}`);
@@ -178,6 +182,25 @@ export default async function handler(req, res) {
       });
     }
     
+    // Check if we're approaching timeout
+    const elapsed = Date.now() - startTime;
+    if (elapsed > timeoutMs * 0.3) { // If setup took >30% of our time
+      console.log(`⚠️ Slow start detected (${elapsed}ms), reducing block range`);
+      const reducedToBlock = Math.min(toBlock, fromBlock + 20); // Very small range
+      const eventsProcessed = await processVaultEvents(fromBlock, reducedToBlock);
+      await updateLastIndexedBlock(reducedToBlock);
+      
+      return res.status(200).json({
+        message: 'Indexer job completed (reduced range due to slow start)',
+        blocksProcessed: reducedToBlock - fromBlock + 1,
+        eventsProcessed,
+        fromBlock,
+        toBlock: reducedToBlock,
+        currentBlock,
+        timeElapsed: Date.now() - startTime
+      });
+    }
+    
     const eventsProcessed = await processVaultEvents(fromBlock, toBlock);
     await updateLastIndexedBlock(toBlock);
     
@@ -189,7 +212,8 @@ export default async function handler(req, res) {
       eventsProcessed,
       fromBlock,
       toBlock,
-      currentBlock
+      currentBlock,
+      timeElapsed: Date.now() - startTime
     });
     
   } catch (error) {
