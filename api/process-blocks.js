@@ -54,6 +54,11 @@ async function processBlockRange(fromBlock, toBlock) {
       
       console.log(`Scanning block ${blockNumber} with ${block.transactions.length} transactions`);
       
+      if (blockNumber === 3141681) {
+        console.log(`🔍 SPECIAL DEBUG for block 3141681:`);
+        console.log(`Transactions: ${JSON.stringify(block.transactions)}`);
+      }
+      
       // Check each transaction for events  
       for (const tx of block.transactions) {
         const txHash = typeof tx === 'string' ? tx : tx.hash;
@@ -65,10 +70,18 @@ async function processBlockRange(fromBlock, toBlock) {
           
           // Check logs in this transaction
           for (const log of receipt.logs) {
+            if (blockNumber === 3141681) {
+              console.log(`  Log address: ${log.address}, topic0: ${log.topics[0]}`);
+            }
+            
             // Check if this log is from one of our target contracts
             const isTargetContract = Object.values(CONTRACTS).some(addr => 
               addr.toLowerCase() === log.address.toLowerCase()
             );
+            
+            if (blockNumber === 3141681 && isTargetContract) {
+              console.log(`  ✅ VaultManager log found! Topic: ${log.topics[0]}`);
+            }
             
             if (!isTargetContract) {
               continue;
