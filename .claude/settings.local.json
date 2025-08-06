@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "WebFetch(domain:docs.tatum.io)",
+      "WebFetch(domain:co.tatum.io)",
+      "WebFetch(domain:www.intrinsic.network)"
+    ],
+    "deny": []
+  }
+}

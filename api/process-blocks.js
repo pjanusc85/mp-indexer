@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 
-const RPC_URL = process.env.RSK_RPC_URL || 'https://public-node.testnet.rsk.co';
+const RPC_URL = process.env.RSK_RPC_URL || 'https://mycrypto.testnet.rsk.co';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 

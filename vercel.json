@@ -3,14 +3,17 @@
     "api/cron-indexer.js": {
       "maxDuration": 10
     },
+    "api/alchemy-cron.js": {
+      "maxDuration": 10
+    },
     "api/process-blocks.js": {
       "maxDuration": 10
     }
   },
   "crons": [
     {
-      "path": "/api/cron-indexer",
-      "schedule": "0 12 * * *"
+      "path": "/api/alchemy-cron",
+      "schedule": "0 */2 * * *"
     }
   ],
   "headers": [
