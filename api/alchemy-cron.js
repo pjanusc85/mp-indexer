@@ -113,7 +113,7 @@ async function getLogsWithRetry(provider, fromBlock, toBlock, eventType, maxRetr
 }
 
 export default async function handler(req, res) {
-  console.log('🚀 Alchemy-Powered Cron Indexer Started');
+  console.log('🚀 Alchemy-Powered Cron Indexer Started - v2');
   
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     return res.status(500).json({ 
