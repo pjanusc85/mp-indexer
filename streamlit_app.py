@@ -4,7 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import os
-from supabase import create_client, Client
+import requests
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -18,17 +18,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize Supabase client
-@st.cache_resource
-def init_supabase():
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_ANON_KEY")
+# Initialize Supabase connection
+@st.cache_data(ttl=60)
+def get_supabase_config():
+    url = os.getenv("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
+    key = os.getenv("SUPABASE_ANON_KEY") or st.secrets.get("SUPABASE_ANON_KEY")
+    
     if not url or not key:
-        st.error("Missing Supabase credentials. Please set SUPABASE_URL and SUPABASE_ANON_KEY in .env file")
+        st.error("Missing Supabase credentials. Please add SUPABASE_URL and SUPABASE_ANON_KEY to Streamlit Secrets")
         st.stop()
-    return create_client(url, key)
+    
+    return url, key
 
-supabase = init_supabase()
+SUPABASE_URL, SUPABASE_KEY = get_supabase_config()
 
 # Custom CSS
 st.markdown("""
@@ -105,15 +107,29 @@ event_types = st.sidebar.multiselect(
 @st.cache_data(ttl=60)  # Cache for 1 minute
 def fetch_vault_events(start_date, end_date, event_types):
     try:
-        query = supabase.table('vault_events').select('*')
-        query = query.gte('timestamp', start_date.isoformat())
-        query = query.lte('timestamp', end_date.isoformat())
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+            'Content-Type': 'application/json'
+        }
+        
+        # Build query parameters
+        params = {
+            'select': '*',
+            'timestamp': f'gte.{start_date.isoformat()},lte.{end_date.isoformat()}',
+            'order': 'timestamp.asc'
+        }
         
         if event_types:
-            query = query.in_('event_type', event_types)
+            params['event_type'] = f'in.({",".join(event_types)})'
         
-        response = query.execute()
-        return pd.DataFrame(response.data)
+        response = requests.get(f'{SUPABASE_URL}/rest/v1/vault_events', headers=headers, params=params)
+        
+        if response.status_code == 200:
+            return pd.DataFrame(response.json())
+        else:
+            st.error(f"Error fetching data: {response.status_code}")
+            return pd.DataFrame()
     except Exception as e:
         st.error(f"Error fetching data: {str(e)}")
         return pd.DataFrame()
@@ -121,10 +137,39 @@ def fetch_vault_events(start_date, end_date, event_types):
 @st.cache_data(ttl=60)
 def fetch_summary_stats(start_date, end_date):
     try:
-        response = supabase.table('vault_events').select('*').gte('timestamp', start_date.isoformat()).lte('timestamp', end_date.isoformat()).execute()
-        df = pd.DataFrame(response.data)
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
         
-        if df.empty:
+        params = {
+            'select': '*',
+            'timestamp': f'gte.{start_date.isoformat()},lte.{end_date.isoformat()}'
+        }
+        
+        response = requests.get(f'{SUPABASE_URL}/rest/v1/vault_events', headers=headers, params=params)
+        
+        if response.status_code == 200:
+            df = pd.DataFrame(response.json())
+            
+            if df.empty:
+                return {
+                    'total_events': 0,
+                    'unique_vaults': 0,
+                    'total_updates': 0,
+                    'total_liquidations': 0,
+                    'latest_block': 0
+                }
+            
+            return {
+                'total_events': len(df),
+                'unique_vaults': df['vault_id'].nunique() if 'vault_id' in df else 0,
+                'total_updates': len(df[df['event_type'] == 'VaultUpdated']) if 'event_type' in df else 0,
+                'total_liquidations': len(df[df['event_type'] == 'VaultLiquidated']) if 'event_type' in df else 0,
+                'latest_block': df['block_number'].max() if 'block_number' in df else 0
+            }
+        else:
+            st.error(f"Error fetching summary: {response.status_code}")
             return {
                 'total_events': 0,
                 'unique_vaults': 0,
@@ -132,14 +177,6 @@ def fetch_summary_stats(start_date, end_date):
                 'total_liquidations': 0,
                 'latest_block': 0
             }
-        
-        return {
-            'total_events': len(df),
-            'unique_vaults': df['vault_id'].nunique() if 'vault_id' in df else 0,
-            'total_updates': len(df[df['event_type'] == 'VaultUpdated']) if 'event_type' in df else 0,
-            'total_liquidations': len(df[df['event_type'] == 'VaultLiquidated']) if 'event_type' in df else 0,
-            'latest_block': df['block_number'].max() if 'block_number' in df else 0
-        }
     except Exception as e:
         st.error(f"Error fetching summary stats: {str(e)}")
         return {
