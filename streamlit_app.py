@@ -44,6 +44,21 @@ st.markdown("""
         border-radius: 0.5rem;
         box-shadow: 0 1px 3px rgba(0,0,0,0.12);
     }
+    .stMetric > div {
+        color: #1f2937 !important;
+    }
+    .stMetric label {
+        color: #6b7280 !important;
+    }
+    .stMetric [data-testid="metric-container"] {
+        background-color: #f0f2f6;
+        border: 1px solid #e5e7eb;
+        padding: 1rem;
+        border-radius: 0.5rem;
+    }
+    .stMetric [data-testid="metric-container"] > div {
+        color: #1f2937 !important;
+    }
     h1 {
         color: #1f2937;
         border-bottom: 2px solid #3b82f6;
@@ -205,15 +220,44 @@ st.markdown("## 📈 Key Metrics")
 col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
-    st.metric("Total Events", f"{stats['total_events']:,}")
+    st.markdown(f"""
+    <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+        <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total Events</div>
+        <div style="color: #1e293b; font-size: 1.875rem; font-weight: 700;">{stats['total_events']:,}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with col2:
-    st.metric("Unique Vaults", f"{stats['unique_vaults']:,}")
+    st.markdown(f"""
+    <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+        <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Unique Vaults</div>
+        <div style="color: #1e293b; font-size: 1.875rem; font-weight: 700;">{stats['unique_vaults']:,}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with col3:
-    st.metric("Vault Updates", f"{stats['total_updates']:,}")
+    st.markdown(f"""
+    <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+        <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Vault Updates</div>
+        <div style="color: #059669; font-size: 1.875rem; font-weight: 700;">{stats['total_updates']:,}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with col4:
-    st.metric("Liquidations", f"{stats['total_liquidations']:,}")
+    st.markdown(f"""
+    <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+        <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Liquidations</div>
+        <div style="color: #dc2626; font-size: 1.875rem; font-weight: 700;">{stats['total_liquidations']:,}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with col5:
-    st.metric("Latest Block", f"{stats['latest_block']:,}")
+    st.markdown(f"""
+    <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+        <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Latest Block</div>
+        <div style="color: #1e293b; font-size: 1.875rem; font-weight: 700;">{stats['latest_block']:,}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Data processing
 if not df.empty:
