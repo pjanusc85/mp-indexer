@@ -217,29 +217,11 @@ with col5:
 
 # Data processing
 if not df.empty:
-    # Debug: Show sample data
-    st.sidebar.write("**Debug - Sample Data:**")
-    st.sidebar.code(str(df.head(2).to_dict()))
     
-    try:
-        # Convert timestamp to datetime with error handling
-        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-        
-        # Check if any timestamps failed to parse
-        if df['timestamp'].isna().any():
-            st.warning("Some timestamps could not be parsed and will be excluded")
-            df = df.dropna(subset=['timestamp'])
-        
-        if not df.empty:
-            df['date'] = df['timestamp'].dt.date
-            df['hour'] = df['timestamp'].dt.hour
-        else:
-            st.error("All timestamp data is invalid")
-    except Exception as e:
-        st.error(f"Error processing timestamps: {str(e)}")
-        st.sidebar.code(f"DataFrame columns: {list(df.columns)}")
-        st.sidebar.code(f"DataFrame shape: {df.shape}")
-        st.stop()
+    # Convert timestamp to datetime
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['date'] = df['timestamp'].dt.date
+    df['hour'] = df['timestamp'].dt.hour
     
     # Create tabs for different visualizations
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Overview", "📈 Trends", "🏆 Top Vaults", "🔍 Event Details", "📋 Raw Data"])
