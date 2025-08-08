@@ -69,7 +69,7 @@ st.sidebar.header("⚙️ Filters")
 time_range = st.sidebar.selectbox(
     "Time Range",
     ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "Last 90 Days", "All Time"],
-    index=1
+    index=4  # Default to "All Time" to show existing data
 )
 
 # Calculate date range
@@ -113,25 +113,31 @@ def fetch_vault_events(start_date, end_date, event_types):
             'Content-Type': 'application/json'
         }
         
-        # Build query parameters
-        params = {
-            'select': '*',
-            'timestamp': f'gte.{start_date.isoformat()},lte.{end_date.isoformat()}',
-            'order': 'timestamp.asc'
-        }
+        # For "All Time", don't add date filters
+        if start_date.year == 2023:  # Our "All Time" default
+            url = f'{SUPABASE_URL}/rest/v1/vault_events?select=*&order=timestamp.asc'
+        else:
+            # Build URL with proper Supabase query format
+            url = f'{SUPABASE_URL}/rest/v1/vault_events?select=*'
+            url += f'&timestamp=gte.{start_date.isoformat()}'
+            url += f'&timestamp=lte.{end_date.isoformat()}'
+            url += '&order=timestamp.asc'
         
         if event_types:
-            params['event_type'] = f'in.({",".join(event_types)})'
+            url += f'&event_type=in.({",".join(event_types)})'
         
-        response = requests.get(f'{SUPABASE_URL}/rest/v1/vault_events', headers=headers, params=params)
+        response = requests.get(url, headers=headers)
         
         if response.status_code == 200:
-            return pd.DataFrame(response.json())
+            data = response.json()
+            st.sidebar.success(f"✅ Found {len(data)} events")
+            return pd.DataFrame(data)
         else:
-            st.error(f"Error fetching data: {response.status_code}")
+            st.sidebar.error(f"❌ Error: {response.status_code}")
+            st.sidebar.code(response.text)
             return pd.DataFrame()
     except Exception as e:
-        st.error(f"Error fetching data: {str(e)}")
+        st.sidebar.error(f"❌ Exception: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=60)
@@ -142,12 +148,15 @@ def fetch_summary_stats(start_date, end_date):
             'Authorization': f'Bearer {SUPABASE_KEY}',
         }
         
-        params = {
-            'select': '*',
-            'timestamp': f'gte.{start_date.isoformat()},lte.{end_date.isoformat()}'
-        }
+        # Build URL with proper Supabase query format
+        if start_date.year == 2023:  # "All Time"
+            url = f'{SUPABASE_URL}/rest/v1/vault_events?select=*'
+        else:
+            url = f'{SUPABASE_URL}/rest/v1/vault_events?select=*'
+            url += f'&timestamp=gte.{start_date.isoformat()}'
+            url += f'&timestamp=lte.{end_date.isoformat()}'
         
-        response = requests.get(f'{SUPABASE_URL}/rest/v1/vault_events', headers=headers, params=params)
+        response = requests.get(url, headers=headers)
         
         if response.status_code == 200:
             df = pd.DataFrame(response.json())
