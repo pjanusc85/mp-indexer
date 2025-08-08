@@ -434,19 +434,18 @@ if not df.empty:
 else:
     st.warning("No data available for the selected time range and filters.")
 
-# Footer
+# Auto-refresh (moved to sidebar only)  
+auto_refresh = st.sidebar.checkbox("Auto-refresh", value=False)
+
+# Footer - only render once at the end
 st.markdown("---")
 st.markdown(
-    """
+    f"""
     <div style="text-align: center; color: #6b7280; padding: 1rem;">
         Money Protocol Indexer Analytics | Real-time RSK Testnet Data
-        <br>Last updated: {}<br>
-        <small>Auto-refreshes every 60 seconds</small>
+        <br>Last updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}<br>
+        <small>Auto-refresh: {'Enabled' if auto_refresh else 'Disabled'}</small>
     </div>
-    """.format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+    """,
     unsafe_allow_html=True
 )
-
-# Auto-refresh
-if st.sidebar.checkbox("Auto-refresh", value=True):
-    st.rerun()
