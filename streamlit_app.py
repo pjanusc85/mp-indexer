@@ -218,10 +218,20 @@ with col5:
 # Data processing
 if not df.empty:
     
-    # Convert timestamp to datetime
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df['date'] = df['timestamp'].dt.date
-    df['hour'] = df['timestamp'].dt.hour
+    # Convert timestamp to datetime with robust error handling
+    try:
+        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
+        # Remove any rows with invalid timestamps
+        df = df.dropna(subset=['timestamp'])
+        if df.empty:
+            st.error("No valid timestamp data found")
+            st.stop()
+        df['date'] = df['timestamp'].dt.date
+        df['hour'] = df['timestamp'].dt.hour
+    except Exception as e:
+        st.error(f"Error processing timestamps: {e}")
+        st.code(f"Sample timestamp data: {df['timestamp'].head().tolist()}")
+        st.stop()
     
     # Create tabs for different visualizations
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Overview", "📈 Trends", "🏆 Top Vaults", "🔍 Event Details", "📋 Raw Data"])
@@ -318,7 +328,7 @@ if not df.empty:
                 labels={'vault_id': 'Vault ID', 'event_count': 'Event Count'},
                 color_discrete_sequence=['#3b82f6']
             )
-            fig.update_xaxis(tickangle=45)
+            fig.update_layout(xaxis_tickangle=45)
             st.plotly_chart(fig, use_container_width=True)
     
     with tab4:
