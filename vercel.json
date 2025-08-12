@@ -8,6 +8,9 @@
     },
     "api/process-blocks.js": {
       "maxDuration": 10
+    },
+    "api/tvl-tracker.js": {
+      "maxDuration": 30
     }
   },
   "crons": [

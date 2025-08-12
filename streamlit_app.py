@@ -120,6 +120,42 @@ event_types = st.sidebar.multiselect(
 
 # Data fetching functions
 @st.cache_data(ttl=60)  # Cache for 1 minute
+def fetch_tvl_data(start_date, end_date):
+    """Fetch TVL (Total Value Locked) data"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        # Build URL for TVL snapshots
+        if start_date.year == 2023:  # "All Time"
+            url = f'{SUPABASE_URL}/rest/v1/tvl_snapshots?select=*&order=timestamp.asc'
+        else:
+            url = f'{SUPABASE_URL}/rest/v1/tvl_snapshots?select=*'
+            url += f'&timestamp=gte.{start_date.isoformat()}'
+            url += f'&timestamp=lte.{end_date.isoformat()}'
+            url += '&order=timestamp.asc'
+        
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            st.sidebar.warning(f"TVL data unavailable: {response.status_code}")
+            return pd.DataFrame()
+            
+    except Exception as e:
+        st.sidebar.error(f"Error fetching TVL data: {str(e)}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=60)  # Cache for 1 minute  
 def fetch_vault_events(start_date, end_date, event_types):
     try:
         headers = {
@@ -214,6 +250,73 @@ def fetch_summary_stats(start_date, end_date):
 # Fetch data
 df = fetch_vault_events(start_date, end_date, event_types)
 stats = fetch_summary_stats(start_date, end_date)
+tvl_df = fetch_tvl_data(start_date, end_date)
+
+# TVL Section
+if not tvl_df.empty:
+    st.markdown("## 🔒 Total Value Locked (TVL)")
+    
+    # Get latest TVL values
+    latest_tvl = tvl_df.iloc[-1]
+    current_tvl = latest_tvl['total_btc']
+    
+    # Calculate 24h change if we have enough data
+    tvl_change = 0
+    tvl_change_pct = 0
+    if len(tvl_df) > 1:
+        previous_tvl = tvl_df.iloc[-2]['total_btc'] if len(tvl_df) > 1 else current_tvl
+        tvl_change = current_tvl - previous_tvl
+        tvl_change_pct = (tvl_change / previous_tvl * 100) if previous_tvl > 0 else 0
+    
+    # TVL metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown(f"""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total TVL</div>
+            <div style="color: #1e293b; font-size: 1.875rem; font-weight: 700;">{current_tvl:.4f} BTC</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Active Pool</div>
+            <div style="color: #059669; font-size: 1.875rem; font-weight: 700;">{latest_tvl['active_pool_btc']:.4f} BTC</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        change_color = "#059669" if tvl_change >= 0 else "#dc2626"
+        change_symbol = "+" if tvl_change >= 0 else ""
+        st.markdown(f"""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Change</div>
+            <div style="color: {change_color}; font-size: 1.875rem; font-weight: 700;">{change_symbol}{tvl_change:.4f} BTC</div>
+            <div style="color: {change_color}; font-size: 0.875rem;">({change_symbol}{tvl_change_pct:.2f}%)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # TVL Chart
+    st.markdown("### TVL Over Time")
+    if len(tvl_df) > 1:
+        fig = px.area(
+            tvl_df,
+            x='timestamp',
+            y='total_btc',
+            title='Total Value Locked (Excluding Stability Pool)',
+            labels={'timestamp': 'Time', 'total_btc': 'BTC Locked'},
+            color_discrete_sequence=['#3b82f6']
+        )
+        fig.update_layout(
+            hovermode='x unified',
+            showlegend=False,
+            height=400
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Insufficient TVL data for chart. Run the TVL tracker to collect more data points.")
 
 # Display metrics
 st.markdown("## 📈 Key Metrics")
