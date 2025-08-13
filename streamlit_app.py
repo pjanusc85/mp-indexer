@@ -193,6 +193,46 @@ def fetch_bpd_supply_data(start_date, end_date):
         st.sidebar.error(f"Error fetching BPD supply data: {str(e)}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=60)
+def fetch_staking_gains_data(start_date, end_date):
+    """Fetch staking gains data from hourly view"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        # Build URL for staking gains hourly view
+        if start_date.year == 2023:  # "All Time"
+            url = f'{SUPABASE_URL}/rest/v1/staking_gains_hourly?select=*&order=hour.asc'
+        else:
+            url = f'{SUPABASE_URL}/rest/v1/staking_gains_hourly?select=*'
+            url += f'&hour=gte.{start_date.isoformat()}'
+            url += f'&hour=lte.{end_date.isoformat()}'
+            url += '&order=hour.asc'
+        
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['hour'] = pd.to_datetime(df['hour'])
+                # Fill NaN values with 0 for cumulative calculations
+                df = df.fillna(0)
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            # Don't show warning for 404, as table might not exist yet
+            if response.status_code != 404:
+                st.sidebar.warning(f"Staking gains data unavailable: {response.status_code}")
+            return pd.DataFrame()
+            
+    except Exception as e:
+        st.sidebar.error(f"Error fetching staking gains data: {str(e)}")
+        return pd.DataFrame()
+
 @st.cache_data(ttl=60)  # Cache for 1 minute  
 def fetch_vault_events(start_date, end_date, event_types):
     try:
@@ -290,6 +330,7 @@ df = fetch_vault_events(start_date, end_date, event_types)
 stats = fetch_summary_stats(start_date, end_date)
 tvl_df = fetch_tvl_data(start_date, end_date)
 bpd_df = fetch_bpd_supply_data(start_date, end_date)
+staking_gains_df = fetch_staking_gains_data(start_date, end_date)
 
 # TVL Section
 if not tvl_df.empty:
@@ -426,6 +467,121 @@ if not bpd_df.empty:
 else:
     st.markdown("## 💰 BPD Supply")
     st.info("No BPD supply data available. Run the BPD supply tracker to start collecting data.")
+
+# Staking Gains Section
+if not staking_gains_df.empty:
+    st.markdown("## 🎯 Total Gains from Staking")
+    
+    # Get latest staking gains values
+    latest_gains = staking_gains_df.iloc[-1]
+    
+    # Staking Gains metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BPD Paid</div>
+            <div style="color: #8b5cf6; font-size: 1.875rem; font-weight: 700;">{latest_gains['total_bpd_paid']:,.2f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BPD Claimed</div>
+            <div style="color: #059669; font-size: 1.875rem; font-weight: 700;">{latest_gains['total_bpd_claimed']:,.2f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BTC Paid</div>
+            <div style="color: #f59e0b; font-size: 1.875rem; font-weight: 700;">{latest_gains['total_btc_paid']:,.4f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown(f"""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BTC Claimed</div>
+            <div style="color: #ef4444; font-size: 1.875rem; font-weight: 700;">{latest_gains['total_btc_claimed']:,.4f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Staking Gains Chart
+    st.markdown("### Cumulative Staking Gains Over Time")
+    if len(staking_gains_df) > 1:
+        fig = go.Figure()
+        
+        # Add BPD lines
+        fig.add_trace(go.Scatter(
+            x=staking_gains_df['hour'],
+            y=staking_gains_df['total_bpd_paid'],
+            mode='lines',
+            name='BPD Paid',
+            line=dict(color='#8b5cf6', width=2),
+            yaxis='y'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=staking_gains_df['hour'],
+            y=staking_gains_df['total_bpd_claimed'],
+            mode='lines',
+            name='BPD Claimed',
+            line=dict(color='#059669', width=2),
+            yaxis='y'
+        ))
+        
+        # Add BTC lines
+        fig.add_trace(go.Scatter(
+            x=staking_gains_df['hour'],
+            y=staking_gains_df['total_btc_paid'],
+            mode='lines',
+            name='BTC Paid',
+            line=dict(color='#f59e0b', width=2),
+            yaxis='y2'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=staking_gains_df['hour'],
+            y=staking_gains_df['total_btc_claimed'],
+            mode='lines',
+            name='BTC Claimed',
+            line=dict(color='#ef4444', width=2),
+            yaxis='y2'
+        ))
+        
+        fig.update_layout(
+            title='Total Gains from Staking',
+            xaxis_title='Time',
+            yaxis=dict(
+                title='BPD Amount',
+                side='left'
+            ),
+            yaxis2=dict(
+                title='BTC Amount',
+                side='right',
+                overlaying='y'
+            ),
+            hovermode='x unified',
+            height=400,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Insufficient staking gains data for chart. Run the staking gains tracker to collect more data points.")
+else:
+    st.markdown("## 🎯 Total Gains from Staking")
+    st.info("No staking gains data available. Run the staking gains tracker to start collecting data.")
 
 # Display metrics
 st.markdown("## 📈 Key Metrics")
