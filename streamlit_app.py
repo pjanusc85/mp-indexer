@@ -499,12 +499,12 @@ else:
     st.info("No BPD supply data available. Run the BPD supply tracker to start collecting data.")
 
 # Staking Gains Section
+st.markdown("## 🎯 Total Gains from Staking")
+
+# Metrics subsection
+st.markdown("### 📊 Current Metrics")
+
 if not staking_gains_df.empty:
-    st.markdown("## 🎯 Total Gains from Staking")
-    
-    # Metrics subsection
-    st.markdown("### 📊 Current Metrics")
-    
     # Get latest staking gains values
     latest_gains = staking_gains_df.iloc[-1]
     
@@ -542,136 +542,176 @@ if not staking_gains_df.empty:
             <div style="color: #ef4444; font-size: 1.875rem; font-weight: 700;">{latest_gains['total_btc_claimed']:,.4f}</div>
         </div>
         """, unsafe_allow_html=True)
-    
-    # Cumulative Chart subsection
-    st.markdown("### 📈 Cumulative Staking Gains Over Time")
-    if len(staking_gains_df) > 1:
-        fig = go.Figure()
-        
-        # Add BPD lines
-        fig.add_trace(go.Scatter(
-            x=staking_gains_df['hour'],
-            y=staking_gains_df['total_bpd_paid'],
-            mode='lines',
-            name='BPD Paid',
-            line=dict(color='#8b5cf6', width=2),
-            yaxis='y'
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=staking_gains_df['hour'],
-            y=staking_gains_df['total_bpd_claimed'],
-            mode='lines',
-            name='BPD Claimed',
-            line=dict(color='#059669', width=2),
-            yaxis='y'
-        ))
-        
-        # Add BTC lines
-        fig.add_trace(go.Scatter(
-            x=staking_gains_df['hour'],
-            y=staking_gains_df['total_btc_paid'],
-            mode='lines',
-            name='BTC Paid',
-            line=dict(color='#f59e0b', width=2),
-            yaxis='y2'
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=staking_gains_df['hour'],
-            y=staking_gains_df['total_btc_claimed'],
-            mode='lines',
-            name='BTC Claimed',
-            line=dict(color='#ef4444', width=2),
-            yaxis='y2'
-        ))
-        
-        fig.update_layout(
-            title='Total Gains from Staking',
-            xaxis_title='Time',
-            yaxis=dict(
-                title='BPD Amount',
-                side='left'
-            ),
-            yaxis2=dict(
-                title='BTC Amount',
-                side='right',
-                overlaying='y'
-            ),
-            hovermode='x unified',
-            height=400,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            )
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Daily Issuance Gain Chart (Last 7 Days)
-        if not daily_gains_df.empty:
-            st.markdown("### 📊 Daily Issuance Gain from MP Staking")
-            st.markdown("*Last 7 days - Fees generated vs gains claimed*")
-            
-            # Create bar chart showing daily fees vs claims
-            fig_daily = go.Figure()
-            
-            # Convert to display format
-            daily_display = daily_gains_df.copy()
-            daily_display['day_str'] = daily_display['day'].dt.strftime('%b %d')
-            
-            # Add bars for fees generated
-            fig_daily.add_trace(go.Bar(
-                x=daily_display['day_str'],
-                y=daily_display['bpd_paid'],
-                name='Fees generated (BPD)',
-                marker_color='#6366f1',
-                yaxis='y'
-            ))
-            
-            # Add bars for gains claimed
-            fig_daily.add_trace(go.Bar(
-                x=daily_display['day_str'],
-                y=daily_display['bpd_claimed'],
-                name='Gains claimed (BPD)',
-                marker_color='#f87171',
-                yaxis='y'
-            ))
-            
-            fig_daily.update_layout(
-                title='Daily BPD Fees Generated vs Gains Claimed',
-                xaxis_title='Date',
-                yaxis_title='BPD Amount',
-                barmode='group',
-                hovermode='x unified',
-                height=400,
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1
-                )
-            )
-            
-            st.plotly_chart(fig_daily, use_container_width=True)
-            
-            # Show summary table
-            if len(daily_display) > 0:
-                st.markdown("### 📋 Daily Summary")
-                summary_table = daily_display[['day_str', 'bpd_paid', 'bpd_claimed']].copy()
-                summary_table.columns = ['Date', 'BPD Fees Generated', 'BPD Gains Claimed']
-                summary_table['BPD Fees Generated'] = summary_table['BPD Fees Generated'].round(2)
-                summary_table['BPD Gains Claimed'] = summary_table['BPD Gains Claimed'].round(2)
-                st.dataframe(summary_table, use_container_width=True, hide_index=True)
-    else:
-        st.info("Insufficient staking gains data for chart. Run the staking gains tracker to collect more data points.")
 else:
-    st.markdown("## 🎯 Total Gains from Staking")
-    st.info("No staking gains data available. Run the staking gains tracker to start collecting data.")
+    # Show placeholder metrics when no data
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown("""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BPD Paid</div>
+            <div style="color: #8b5cf6; font-size: 1.875rem; font-weight: 700;">0.00</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BPD Claimed</div>
+            <div style="color: #059669; font-size: 1.875rem; font-weight: 700;">0.00</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BTC Paid</div>
+            <div style="color: #f59e0b; font-size: 1.875rem; font-weight: 700;">0.0000</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown("""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BTC Claimed</div>
+            <div style="color: #ef4444; font-size: 1.875rem; font-weight: 700;">0.0000</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+# Cumulative Chart subsection
+st.markdown("### 📈 Cumulative Staking Gains Over Time")
+
+if not staking_gains_df.empty and len(staking_gains_df) > 1:
+    fig = go.Figure()
+    
+    # Add BPD lines
+    fig.add_trace(go.Scatter(
+        x=staking_gains_df['hour'],
+        y=staking_gains_df['total_bpd_paid'],
+        mode='lines',
+        name='BPD Paid',
+        line=dict(color='#8b5cf6', width=2),
+        yaxis='y'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=staking_gains_df['hour'],
+        y=staking_gains_df['total_bpd_claimed'],
+        mode='lines',
+        name='BPD Claimed',
+        line=dict(color='#059669', width=2),
+        yaxis='y'
+    ))
+    
+    # Add BTC lines
+    fig.add_trace(go.Scatter(
+        x=staking_gains_df['hour'],
+        y=staking_gains_df['total_btc_paid'],
+        mode='lines',
+        name='BTC Paid',
+        line=dict(color='#f59e0b', width=2),
+        yaxis='y2'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=staking_gains_df['hour'],
+        y=staking_gains_df['total_btc_claimed'],
+        mode='lines',
+        name='BTC Claimed',
+        line=dict(color='#ef4444', width=2),
+        yaxis='y2'
+    ))
+    
+    fig.update_layout(
+        title='Total Gains from Staking',
+        xaxis_title='Time',
+        yaxis=dict(
+            title='BPD Amount',
+            side='left'
+        ),
+        yaxis2=dict(
+            title='BTC Amount',
+            side='right',
+            overlaying='y'
+        ),
+        hovermode='x unified',
+        height=400,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("Insufficient staking gains data for chart. Run the staking gains tracker to collect more data points.")
+
+# Daily Issuance Gain Chart subsection
+st.markdown("### 📊 Daily Issuance Gain from MP Staking")
+st.markdown("*Last 7 days - Fees generated vs gains claimed*")
+
+if not daily_gains_df.empty:
+    # Create bar chart showing daily fees vs claims
+    fig_daily = go.Figure()
+    
+    # Convert to display format
+    daily_display = daily_gains_df.copy()
+    daily_display['day_str'] = daily_display['day'].dt.strftime('%b %d')
+    
+    # Add bars for fees generated
+    fig_daily.add_trace(go.Bar(
+        x=daily_display['day_str'],
+        y=daily_display['bpd_paid'],
+        name='Fees generated (BPD)',
+        marker_color='#6366f1',
+        yaxis='y'
+    ))
+    
+    # Add bars for gains claimed
+    fig_daily.add_trace(go.Bar(
+        x=daily_display['day_str'],
+        y=daily_display['bpd_claimed'],
+        name='Gains claimed (BPD)',
+        marker_color='#f87171',
+        yaxis='y'
+    ))
+    
+    fig_daily.update_layout(
+        title='Daily BPD Fees Generated vs Gains Claimed',
+        xaxis_title='Date',
+        yaxis_title='BPD Amount',
+        barmode='group',
+        hovermode='x unified',
+        height=400,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    st.plotly_chart(fig_daily, use_container_width=True)
+else:
+    st.info("No daily staking gains data available yet. Run the staking gains tracker to start collecting data.")
+
+# Daily Summary subsection  
+st.markdown("### 📋 Daily Summary")
+
+if not daily_gains_df.empty and len(daily_gains_df) > 0:
+    daily_display = daily_gains_df.copy()
+    daily_display['day_str'] = daily_display['day'].dt.strftime('%b %d')
+    summary_table = daily_display[['day_str', 'bpd_paid', 'bpd_claimed']].copy()
+    summary_table.columns = ['Date', 'BPD Fees Generated', 'BPD Gains Claimed']
+    summary_table['BPD Fees Generated'] = summary_table['BPD Fees Generated'].round(2)
+    summary_table['BPD Gains Claimed'] = summary_table['BPD Gains Claimed'].round(2)
+    st.dataframe(summary_table, use_container_width=True, hide_index=True)
+else:
+    st.info("Daily summary will appear here when staking activity data is available.")
 
 # Display metrics
 st.markdown("## 📈 Key Metrics")
