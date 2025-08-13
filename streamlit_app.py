@@ -155,6 +155,44 @@ def fetch_tvl_data(start_date, end_date):
         st.sidebar.error(f"Error fetching TVL data: {str(e)}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=60)  # Cache for 1 minute
+def fetch_bpd_supply_data(start_date, end_date):
+    """Fetch BPD supply data"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        # Build URL for BPD supply snapshots
+        if start_date.year == 2023:  # "All Time"
+            url = f'{SUPABASE_URL}/rest/v1/bpd_supply_snapshots?select=*&order=timestamp.asc'
+        else:
+            url = f'{SUPABASE_URL}/rest/v1/bpd_supply_snapshots?select=*'
+            url += f'&timestamp=gte.{start_date.isoformat()}'
+            url += f'&timestamp=lte.{end_date.isoformat()}'
+            url += '&order=timestamp.asc'
+        
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            # Don't show warning for 404, as table might not exist yet
+            if response.status_code != 404:
+                st.sidebar.warning(f"BPD supply data unavailable: {response.status_code}")
+            return pd.DataFrame()
+            
+    except Exception as e:
+        st.sidebar.error(f"Error fetching BPD supply data: {str(e)}")
+        return pd.DataFrame()
+
 @st.cache_data(ttl=60)  # Cache for 1 minute  
 def fetch_vault_events(start_date, end_date, event_types):
     try:
@@ -251,6 +289,7 @@ def fetch_summary_stats(start_date, end_date):
 df = fetch_vault_events(start_date, end_date, event_types)
 stats = fetch_summary_stats(start_date, end_date)
 tvl_df = fetch_tvl_data(start_date, end_date)
+bpd_df = fetch_bpd_supply_data(start_date, end_date)
 
 # TVL Section
 if not tvl_df.empty:
@@ -317,6 +356,76 @@ if not tvl_df.empty:
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Insufficient TVL data for chart. Run the TVL tracker to collect more data points.")
+
+# BPD Supply Section
+if not bpd_df.empty:
+    st.markdown("## 💰 BPD Supply")
+    
+    # Get latest BPD supply values
+    latest_bpd = bpd_df.iloc[-1]
+    current_supply = latest_bpd['total_supply_bpd']
+    
+    # Calculate change if we have enough data
+    supply_change = 0
+    supply_change_pct = 0
+    if len(bpd_df) > 1:
+        previous_supply = bpd_df.iloc[-2]['total_supply_bpd'] if len(bpd_df) > 1 else current_supply
+        supply_change = current_supply - previous_supply
+        supply_change_pct = (supply_change / previous_supply * 100) if previous_supply > 0 else 0
+    
+    # BPD Supply metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown(f"""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BPD Supply</div>
+            <div style="color: #1e293b; font-size: 1.875rem; font-weight: 700;">{current_supply:,.2f} BPD</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Latest Block</div>
+            <div style="color: #6366f1; font-size: 1.875rem; font-weight: 700;">{latest_bpd['block_number']:,}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        change_color = "#059669" if supply_change >= 0 else "#dc2626"
+        change_symbol = "+" if supply_change >= 0 else ""
+        st.markdown(f"""
+        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Change</div>
+            <div style="color: {change_color}; font-size: 1.875rem; font-weight: 700;">{change_symbol}{supply_change:,.2f} BPD</div>
+            <div style="color: {change_color}; font-size: 0.875rem;">({change_symbol}{supply_change_pct:.2f}%)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # BPD Supply Chart
+    st.markdown("### BPD Supply Over Time")
+    if len(bpd_df) > 1:
+        fig = px.line(
+            bpd_df,
+            x='timestamp',
+            y='total_supply_bpd',
+            title='Total BPD Supply',
+            labels={'timestamp': 'Time', 'total_supply_bpd': 'BPD Supply'},
+            color_discrete_sequence=['#f59e0b']
+        )
+        fig.update_layout(
+            hovermode='x unified',
+            showlegend=False,
+            height=400
+        )
+        fig.update_traces(line=dict(width=3))
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Insufficient BPD supply data for chart. Run the BPD supply tracker to collect more data points.")
+else:
+    st.markdown("## 💰 BPD Supply")
+    st.info("No BPD supply data available. Run the BPD supply tracker to start collecting data.")
 
 # Display metrics
 st.markdown("## 📈 Key Metrics")
