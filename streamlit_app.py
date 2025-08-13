@@ -855,7 +855,7 @@ def render_tvl_analytics():
             - Cumulative balance tracking over time
             - Transaction counts and flow analysis
             - Equivalent to Dune Analytics balance tracking queries
-            """))
+            """)
 
 def render_bpd_analytics():
     """Render BPD analytics section"""
