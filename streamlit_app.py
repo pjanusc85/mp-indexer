@@ -38,53 +38,59 @@ st.markdown("""
     .main {
         padding-top: 2rem;
     }
-    .stMetric {
-        background-color: #f0f2f6;
+    .metric-card {
+        background-color: #f8fafc;
         padding: 1rem;
         border-radius: 0.5rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        border: 1px solid #e2e8f0;
+        text-align: center;
+        margin: 0.5rem 0;
     }
-    .stMetric > div {
-        color: #1f2937 !important;
+    .metric-value {
+        color: #1e293b;
+        font-size: 1.875rem;
+        font-weight: 700;
     }
-    .stMetric label {
-        color: #6b7280 !important;
-    }
-    .stMetric [data-testid="metric-container"] {
-        background-color: #f0f2f6;
-        border: 1px solid #e5e7eb;
-        padding: 1rem;
-        border-radius: 0.5rem;
-    }
-    .stMetric [data-testid="metric-container"] > div {
-        color: #1f2937 !important;
-    }
-    h1 {
-        color: #1f2937;
-        border-bottom: 2px solid #3b82f6;
-        padding-bottom: 0.5rem;
-    }
-    .plot-container {
-        border-radius: 0.5rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-        padding: 1rem;
-        background-color: white;
+    .metric-label {
+        color: #64748b;
+        font-size: 0.875rem;
+        font-weight: 500;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Title and description
+# Title
 st.title("🏦 Money Protocol Analytics Dashboard")
-st.markdown("Real-time analytics for vault events on RSK testnet")
+st.markdown("Real-time analytics for Money Protocol on RSK testnet")
 
-# Sidebar filters
-st.sidebar.header("⚙️ Filters")
+# ===========================================
+# SIDEBAR NAVIGATION
+# ===========================================
+
+st.sidebar.markdown("## 📊 Analytics Navigation")
+
+# Main navigation
+analytics_section = st.sidebar.selectbox(
+    "Select Analytics Section",
+    [
+        "🏠 Overview",
+        "🏦 Vault Analytics", 
+        "💰 TVL Analytics",
+        "🪙 BPD Analytics", 
+        "📈 Gains from Staking Analytics",
+        "🔄 Redemption Gains from Staking Analytics",
+        "🎯 MP Staking Analytics"
+    ]
+)
+
+# Filters
+st.sidebar.markdown("## ⚙️ Filters")
 
 # Time range selector
 time_range = st.sidebar.selectbox(
     "Time Range",
     ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "Last 90 Days", "All Time"],
-    index=4  # Default to "All Time" to show existing data
+    index=4  # Default to "All Time"
 )
 
 # Calculate date range
@@ -111,31 +117,41 @@ if use_custom:
     start_date = datetime.combine(start_date, datetime.min.time())
     end_date = datetime.combine(end_date, datetime.max.time())
 
-# Event type filter
-event_types = st.sidebar.multiselect(
-    "Event Types",
-    ["VaultUpdated", "VaultLiquidated"],
-    default=["VaultUpdated", "VaultLiquidated"]
-)
+# Event type filter (for vault analytics)
+if analytics_section in ["🏠 Overview", "🏦 Vault Analytics"]:
+    event_types = st.sidebar.multiselect(
+        "Event Types",
+        ["VaultUpdated", "VaultLiquidated"],
+        default=["VaultUpdated", "VaultLiquidated"]
+    )
+else:
+    event_types = ["VaultUpdated", "VaultLiquidated"]
 
-# Data fetching functions
-@st.cache_data(ttl=60)  # Cache for 1 minute
-def fetch_tvl_data(start_date, end_date):
-    """Fetch TVL (Total Value Locked) data"""
+# ===========================================
+# DATA FETCHING FUNCTIONS
+# ===========================================
+
+@st.cache_data(ttl=60)
+def fetch_vault_events(start_date, end_date, event_types):
+    """Fetch vault events from Supabase"""
     try:
         headers = {
             'apikey': SUPABASE_KEY,
             'Authorization': f'Bearer {SUPABASE_KEY}',
         }
         
-        # Build URL for TVL snapshots
-        if start_date.year == 2023:  # "All Time"
-            url = f'{SUPABASE_URL}/rest/v1/tvl_snapshots?select=*&order=timestamp.asc'
-        else:
-            url = f'{SUPABASE_URL}/rest/v1/tvl_snapshots?select=*'
+        # Build URL
+        url = f'{SUPABASE_URL}/rest/v1/vault_events?select=*'
+        if start_date.year != 2023:  # Not "All Time"
             url += f'&timestamp=gte.{start_date.isoformat()}'
             url += f'&timestamp=lte.{end_date.isoformat()}'
-            url += '&order=timestamp.asc'
+        
+        # Add event type filter
+        if event_types and len(event_types) < 2:
+            event_filter = '|'.join(event_types)
+            url += f'&event_type=in.({event_filter})'
+        
+        url += '&order=timestamp.desc'
         
         response = requests.get(url, headers=headers)
         
@@ -148,31 +164,49 @@ def fetch_tvl_data(start_date, end_date):
             else:
                 return pd.DataFrame()
         else:
-            st.sidebar.warning(f"TVL data unavailable: {response.status_code}")
+            st.sidebar.error(f"Error fetching vault events: {response.status_code}")
             return pd.DataFrame()
             
+    except Exception as e:
+        st.sidebar.error(f"Error fetching vault events: {str(e)}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=60)
+def fetch_tvl_data():
+    """Fetch TVL data from Supabase"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        url = f'{SUPABASE_URL}/rest/v1/tvl_snapshots?select=*&order=timestamp.desc&limit=100'
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            return pd.DataFrame()
     except Exception as e:
         st.sidebar.error(f"Error fetching TVL data: {str(e)}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=60)  # Cache for 1 minute
-def fetch_bpd_supply_data(start_date, end_date):
-    """Fetch BPD supply data"""
+@st.cache_data(ttl=60)
+def fetch_bpd_supply_data():
+    """Fetch BPD supply data from Supabase"""
     try:
         headers = {
             'apikey': SUPABASE_KEY,
             'Authorization': f'Bearer {SUPABASE_KEY}',
         }
         
-        # Build URL for BPD supply snapshots
-        if start_date.year == 2023:  # "All Time"
-            url = f'{SUPABASE_URL}/rest/v1/bpd_supply_snapshots?select=*&order=timestamp.asc'
-        else:
-            url = f'{SUPABASE_URL}/rest/v1/bpd_supply_snapshots?select=*'
-            url += f'&timestamp=gte.{start_date.isoformat()}'
-            url += f'&timestamp=lte.{end_date.isoformat()}'
-            url += '&order=timestamp.asc'
-        
+        url = f'{SUPABASE_URL}/rest/v1/bpd_supply_snapshots?select=*&order=timestamp.desc&limit=100'
         response = requests.get(url, headers=headers)
         
         if response.status_code == 200:
@@ -184,60 +218,15 @@ def fetch_bpd_supply_data(start_date, end_date):
             else:
                 return pd.DataFrame()
         else:
-            # Don't show warning for 404, as table might not exist yet
-            if response.status_code != 404:
-                st.sidebar.warning(f"BPD supply data unavailable: {response.status_code}")
             return pd.DataFrame()
-            
     except Exception as e:
         st.sidebar.error(f"Error fetching BPD supply data: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=60)
-def fetch_staking_gains_data(start_date, end_date):
-    """Fetch staking gains data from hourly view"""
+def fetch_staking_gains_data():
+    """Fetch staking gains data from Supabase"""
     try:
-        headers = {
-            'apikey': SUPABASE_KEY,
-            'Authorization': f'Bearer {SUPABASE_KEY}',
-        }
-        
-        # Build URL for staking gains hourly view
-        if start_date.year == 2023:  # "All Time"
-            url = f'{SUPABASE_URL}/rest/v1/staking_gains_hourly?select=*&order=hour.asc'
-        else:
-            url = f'{SUPABASE_URL}/rest/v1/staking_gains_hourly?select=*'
-            url += f'&hour=gte.{start_date.isoformat()}'
-            url += f'&hour=lte.{end_date.isoformat()}'
-            url += '&order=hour.asc'
-        
-        response = requests.get(url, headers=headers)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data:
-                df = pd.DataFrame(data)
-                df['hour'] = pd.to_datetime(df['hour'])
-                # Fill NaN values with 0 for cumulative calculations
-                df = df.fillna(0)
-                return df
-            else:
-                return pd.DataFrame()
-        else:
-            # Don't show warning for 404, as table might not exist yet
-            if response.status_code != 404:
-                st.sidebar.warning(f"Staking gains data unavailable: {response.status_code}")
-            return pd.DataFrame()
-            
-    except Exception as e:
-        st.sidebar.error(f"Error fetching staking gains data: {str(e)}")
-        return pd.DataFrame()
-
-@st.cache_data(ttl=60)
-def fetch_staking_gains_daily():
-    """Fetch daily staking gains data for issuance gain chart (last 7 days)"""
-    try:
-        # Fetch directly from Supabase
         headers = {
             'apikey': SUPABASE_KEY,
             'Authorization': f'Bearer {SUPABASE_KEY}',
@@ -251,26 +240,19 @@ def fetch_staking_gains_daily():
             if data:
                 df = pd.DataFrame(data)
                 df['day'] = pd.to_datetime(df['day'])
-                # Fill NaN values with 0
-                df = df.fillna(0)
                 return df
             else:
                 return pd.DataFrame()
         else:
-            # Don't show warning for 404, as table might not exist yet
-            if response.status_code != 404:
-                st.sidebar.warning(f"Staking gains data unavailable from Supabase: {response.status_code}")
             return pd.DataFrame()
-            
     except Exception as e:
-        st.sidebar.error(f"Error fetching daily staking gains data: {str(e)}")
+        st.sidebar.error(f"Error fetching staking gains data: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=60)
-def fetch_redemption_gains_daily():
-    """Fetch daily redemption gains data (last 7 days)"""
+def fetch_redemption_gains_data():
+    """Fetch redemption gains data from Supabase"""
     try:
-        # Fetch directly from Supabase
         headers = {
             'apikey': SUPABASE_KEY,
             'Authorization': f'Bearer {SUPABASE_KEY}',
@@ -284,31 +266,24 @@ def fetch_redemption_gains_daily():
             if data:
                 df = pd.DataFrame(data)
                 df['day'] = pd.to_datetime(df['day'])
-                # Fill NaN values with 0
-                df = df.fillna(0)
                 return df
             else:
                 return pd.DataFrame()
         else:
-            # Don't show warning for 404, as table might not exist yet
-            if response.status_code != 404:
-                st.sidebar.warning(f"Redemption gains data unavailable from Supabase: {response.status_code}")
             return pd.DataFrame()
-            
     except Exception as e:
         st.sidebar.error(f"Error fetching redemption gains data: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=60)
 def fetch_mp_staking_data():
-    """Fetch MP staking data directly from Supabase (equivalent to LQTY staking analytics)"""
+    """Fetch MP staking data from Supabase"""
     try:
         headers = {
             'apikey': SUPABASE_KEY,
             'Authorization': f'Bearer {SUPABASE_KEY}',
         }
         
-        # Fetch MP staking hourly data from Supabase
         url = f'{SUPABASE_URL}/rest/v1/mp_staking_hourly?select=*&order=hour.desc&limit=168'  # Last 7 days hourly
         response = requests.get(url, headers=headers)
         
@@ -326,97 +301,14 @@ def fetch_mp_staking_data():
             else:
                 return pd.DataFrame()
         else:
-            if response.status_code != 404:
-                st.sidebar.warning(f"MP staking data unavailable from Supabase: {response.status_code}")
             return pd.DataFrame()
     except Exception as e:
-        st.sidebar.error(f"Error fetching MP staking data from Supabase: {str(e)}")
+        st.sidebar.error(f"Error fetching MP staking data: {str(e)}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=60)  # Cache for 1 minute  
-def fetch_vault_events(start_date, end_date, event_types):
-    try:
-        headers = {
-            'apikey': SUPABASE_KEY,
-            'Authorization': f'Bearer {SUPABASE_KEY}',
-            'Content-Type': 'application/json'
-        }
-        
-        # For "All Time", don't add date filters
-        if start_date.year == 2023:  # Our "All Time" default
-            url = f'{SUPABASE_URL}/rest/v1/vault_events?select=*&order=timestamp.asc'
-        else:
-            # Build URL with proper Supabase query format
-            url = f'{SUPABASE_URL}/rest/v1/vault_events?select=*'
-            url += f'&timestamp=gte.{start_date.isoformat()}'
-            url += f'&timestamp=lte.{end_date.isoformat()}'
-            url += '&order=timestamp.asc'
-        
-        if event_types:
-            url += f'&event_type=in.({",".join(event_types)})'
-        
-        response = requests.get(url, headers=headers)
-        
-        if response.status_code == 200:
-            data = response.json()
-            st.sidebar.success(f"✅ Found {len(data)} events")
-            return pd.DataFrame(data)
-        else:
-            st.sidebar.error(f"❌ Error: {response.status_code}")
-            st.sidebar.code(response.text)
-            return pd.DataFrame()
-    except Exception as e:
-        st.sidebar.error(f"❌ Exception: {str(e)}")
-        return pd.DataFrame()
-
-@st.cache_data(ttl=60)
-def fetch_summary_stats(start_date, end_date):
-    try:
-        headers = {
-            'apikey': SUPABASE_KEY,
-            'Authorization': f'Bearer {SUPABASE_KEY}',
-        }
-        
-        # Build URL with proper Supabase query format
-        if start_date.year == 2023:  # "All Time"
-            url = f'{SUPABASE_URL}/rest/v1/vault_events?select=*'
-        else:
-            url = f'{SUPABASE_URL}/rest/v1/vault_events?select=*'
-            url += f'&timestamp=gte.{start_date.isoformat()}'
-            url += f'&timestamp=lte.{end_date.isoformat()}'
-        
-        response = requests.get(url, headers=headers)
-        
-        if response.status_code == 200:
-            df = pd.DataFrame(response.json())
-            
-            if df.empty:
-                return {
-                    'total_events': 0,
-                    'unique_vaults': 0,
-                    'total_updates': 0,
-                    'total_liquidations': 0,
-                    'latest_block': 0
-                }
-            
-            return {
-                'total_events': len(df),
-                'unique_vaults': df['vault_id'].nunique() if 'vault_id' in df else 0,
-                'total_updates': len(df[df['event_type'] == 'VaultUpdated']) if 'event_type' in df else 0,
-                'total_liquidations': len(df[df['event_type'] == 'VaultLiquidated']) if 'event_type' in df else 0,
-                'latest_block': df['block_number'].max() if 'block_number' in df else 0
-            }
-        else:
-            st.error(f"Error fetching summary: {response.status_code}")
-            return {
-                'total_events': 0,
-                'unique_vaults': 0,
-                'total_updates': 0,
-                'total_liquidations': 0,
-                'latest_block': 0
-            }
-    except Exception as e:
-        st.error(f"Error fetching summary stats: {str(e)}")
+def calculate_summary_stats(df):
+    """Calculate summary statistics from vault events"""
+    if df.empty:
         return {
             'total_events': 0,
             'unique_vaults': 0,
@@ -424,444 +316,582 @@ def fetch_summary_stats(start_date, end_date):
             'total_liquidations': 0,
             'latest_block': 0
         }
+    
+    return {
+        'total_events': len(df),
+        'unique_vaults': df['vault_id'].nunique() if 'vault_id' in df else 0,
+        'total_updates': len(df[df['event_type'] == 'VaultUpdated']) if 'event_type' in df else 0,
+        'total_liquidations': len(df[df['event_type'] == 'VaultLiquidated']) if 'event_type' in df else 0,
+        'latest_block': df['block_number'].max() if 'block_number' in df else 0
+    }
 
-# Fetch data
-df = fetch_vault_events(start_date, end_date, event_types)
-stats = fetch_summary_stats(start_date, end_date)
-tvl_df = fetch_tvl_data(start_date, end_date)
-bpd_df = fetch_bpd_supply_data(start_date, end_date)
-staking_gains_df = fetch_staking_gains_data(start_date, end_date)
-daily_gains_df = fetch_staking_gains_daily()
-redemption_gains_df = fetch_redemption_gains_daily()
+# ===========================================
+# CONTENT SECTIONS
+# ===========================================
 
-# TVL Section
-if not tvl_df.empty:
-    st.markdown("## 🔒 Total Value Locked (TVL)")
+def render_overview():
+    """Render the overview section"""
+    st.markdown("## Welcome to Money Protocol Analytics")
+    st.markdown("Select a specific analytics section from the sidebar to dive deeper into the data.")
     
-    # Get latest TVL values
-    latest_tvl = tvl_df.iloc[-1]
-    current_tvl = latest_tvl['total_btc']
+    # Fetch overview data
+    df = fetch_vault_events(start_date, end_date, event_types)
+    stats = calculate_summary_stats(df)
     
-    # Calculate 24h change if we have enough data
-    tvl_change = 0
-    tvl_change_pct = 0
-    if len(tvl_df) > 1:
-        previous_tvl = tvl_df.iloc[-2]['total_btc'] if len(tvl_df) > 1 else current_tvl
-        tvl_change = current_tvl - previous_tvl
-        tvl_change_pct = (tvl_change / previous_tvl * 100) if previous_tvl > 0 else 0
+    # Connection status
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        if not df.empty:
+            st.success(f"✅ Connected to Supabase - Found {len(df)} events")
+        else:
+            st.warning("⚠️ No vault events found for selected filters")
+    with col2:
+        st.info(f"📅 {time_range}")
+    with col3:
+        st.info(f"🔗 {len(event_types)} event types")
     
-    # TVL metrics
-    col1, col2, col3 = st.columns(3)
+    # Key metrics
+    st.markdown("## 📈 Key Metrics Summary")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    metrics = [
+        ("Total Events", stats['total_events'], "#1e293b"),
+        ("Unique Vaults", stats['unique_vaults'], "#1e293b"),
+        ("Vault Updates", stats['total_updates'], "#059669"),
+        ("Liquidations", stats['total_liquidations'], "#dc2626"),
+        ("Latest Block", stats['latest_block'], "#1e293b")
+    ]
+    
+    for i, (label, value, color) in enumerate(metrics):
+        with [col1, col2, col3, col4, col5][i]:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">{label}</div>
+                <div class="metric-value" style="color: {color};">{value:,}</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # Quick charts
+    if not df.empty:
+        st.markdown("## 📊 Quick Overview")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Event type distribution
+            event_counts = df['event_type'].value_counts()
+            fig = px.pie(
+                values=event_counts.values,
+                names=event_counts.index,
+                title="Event Type Distribution",
+                color_discrete_map={'VaultUpdated': '#3b82f6', 'VaultLiquidated': '#ef4444'}
+            )
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Recent activity trend
+            df['date'] = df['timestamp'].dt.date
+            daily_events = df.groupby('date').size().reset_index(name='count')
+            fig = px.line(
+                daily_events.tail(14),
+                x='date',
+                y='count',
+                title="Daily Activity (Last 14 Days)",
+                labels={'date': 'Date', 'count': 'Event Count'},
+                color_discrete_sequence=['#10b981']
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+def render_vault_analytics():
+    """Render vault analytics section"""
+    df = fetch_vault_events(start_date, end_date, event_types)
+    stats = calculate_summary_stats(df)
+    
+    if df.empty:
+        st.warning("No vault events found for the selected time range and filters.")
+        return
+    
+    # Convert timestamp and add derived columns
+    df['date'] = df['timestamp'].dt.date
+    df['hour'] = df['timestamp'].dt.hour
+    
+    # Key metrics
+    st.markdown("## 📊 Vault Metrics")
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.markdown(f"""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total TVL</div>
-            <div style="color: #1e293b; font-size: 1.875rem; font-weight: 700;">{current_tvl:.4f} BTC</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric("Total Events", f"{stats['total_events']:,}")
+    with col2:
+        st.metric("Unique Vaults", f"{stats['unique_vaults']:,}")
+    with col3:
+        st.metric("Updates", f"{stats['total_updates']:,}")
+    with col4:
+        st.metric("Liquidations", f"{stats['total_liquidations']:,}")
+    
+    # Create tabs for different views
+    tab1, tab2, tab3, tab4 = st.tabs(["📈 Trends", "🏆 Top Vaults", "🔍 Event Details", "📋 Raw Data"])
+    
+    with tab1:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Daily events trend
+            daily_events = df.groupby(['date', 'event_type']).size().reset_index(name='count')
+            fig = px.line(
+                daily_events,
+                x='date',
+                y='count',
+                color='event_type',
+                title="Daily Event Trends",
+                labels={'date': 'Date', 'count': 'Event Count'},
+                color_discrete_map={'VaultUpdated': '#3b82f6', 'VaultLiquidated': '#ef4444'}
+            )
+            fig.update_layout(hovermode='x unified')
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Hourly distribution
+            hourly_data = df.groupby('hour').size().reset_index(name='count')
+            fig = px.bar(
+                hourly_data,
+                x='hour',
+                y='count',
+                title="Activity by Hour of Day",
+                labels={'hour': 'Hour of Day', 'count': 'Event Count'},
+                color_discrete_sequence=['#3b82f6']
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Cumulative events
+        st.markdown("### Cumulative Events Over Time")
+        df_sorted = df.sort_values('timestamp')
+        df_sorted['cumulative'] = range(1, len(df_sorted) + 1)
+        fig = px.area(
+            df_sorted,
+            x='timestamp',
+            y='cumulative',
+            title="Cumulative Events",
+            labels={'timestamp': 'Time', 'cumulative': 'Total Events'},
+            color_discrete_sequence=['#10b981']
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with tab2:
+        # Top vaults analysis
+        if 'vault_id' in df.columns:
+            vault_activity = df[df['vault_id'].notna()].groupby('vault_id').agg({
+                'event_type': 'count',
+                'timestamp': ['min', 'max']
+            }).reset_index()
+            vault_activity.columns = ['vault_id', 'event_count', 'first_seen', 'last_seen']
+            vault_activity = vault_activity.sort_values('event_count', ascending=False).head(10)
+            
+            st.markdown("### Most Active Vaults")
+            st.dataframe(vault_activity, use_container_width=True)
+            
+            # Bar chart
+            fig = px.bar(
+                vault_activity,
+                x='vault_id',
+                y='event_count',
+                title="Top 10 Most Active Vaults",
+                labels={'vault_id': 'Vault ID', 'event_count': 'Event Count'},
+                color_discrete_sequence=['#3b82f6']
+            )
+            fig.update_layout(xaxis_tickangle=45)
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with tab3:
+        # Recent events
+        st.markdown("### Recent Events")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            search_vault = st.text_input("Search by Vault ID", placeholder="Enter vault ID...")
+        with col2:
+            limit = st.number_input("Show events", min_value=10, max_value=100, value=20, step=10)
+        
+        recent_df = df.sort_values('timestamp', ascending=False)
+        
+        if search_vault:
+            recent_df = recent_df[recent_df['vault_id'].str.contains(search_vault, case=False, na=False)]
+        
+        recent_df = recent_df.head(limit)
+        
+        for _, event in recent_df.iterrows():
+            event_color = "#3b82f6" if event['event_type'] == 'VaultUpdated' else "#ef4444"
+            st.markdown(f"""
+            <div style="border-left: 3px solid {event_color}; padding: 10px; margin: 10px 0; background-color: #f9fafb;">
+                <strong>{event['event_type']}</strong> | Block: {event['block_number']} | {event['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}
+                <br>Vault: <code>{event['vault_id']}</code>
+                <br>Tx: <code>{event['transaction_hash']}</code>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    with tab4:
+        # Raw data
+        st.markdown("### Raw Event Data")
+        st.info(f"Showing {len(df)} events")
+        
+        csv = df.to_csv(index=False)
+        st.download_button(
+            label="📥 Download CSV",
+            data=csv,
+            file_name=f"vault_events_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+        
+        st.dataframe(df.sort_values('timestamp', ascending=False), use_container_width=True)
+
+def render_tvl_analytics():
+    """Render TVL analytics section"""
+    tvl_df = fetch_tvl_data()
+    
+    if tvl_df.empty:
+        st.warning("No TVL data available yet. The indexer will collect this data during regular operations.")
+        return
+    
+    # Get latest TVL values
+    latest_tvl = tvl_df.iloc[0]  # Most recent (desc order)
+    
+    st.markdown("## 💰 Total Value Locked (TVL)")
+    
+    # TVL Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "Current TVL (BTC)",
+            f"{latest_tvl['total_btc']:.4f}",
+            help="Total BTC locked in the protocol"
+        )
     
     with col2:
-        st.markdown(f"""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Active Pool</div>
-            <div style="color: #059669; font-size: 1.875rem; font-weight: 700;">{latest_tvl['active_pool_btc']:.4f} BTC</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric(
+            "Active Pool",
+            f"{latest_tvl['active_pool_btc']:.4f}",
+            help="BTC in the Active Pool"
+        )
     
     with col3:
-        change_color = "#059669" if tvl_change >= 0 else "#dc2626"
-        change_symbol = "+" if tvl_change >= 0 else ""
-        st.markdown(f"""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Change</div>
-            <div style="color: {change_color}; font-size: 1.875rem; font-weight: 700;">{change_symbol}{tvl_change:.4f} BTC</div>
-            <div style="color: {change_color}; font-size: 0.875rem;">({change_symbol}{tvl_change_pct:.2f}%)</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric(
+            "Default Pool", 
+            f"{latest_tvl['default_pool_btc']:.4f}",
+            help="BTC in the Default Pool"
+        )
+    
+    with col4:
+        # Calculate change if we have multiple data points
+        if len(tvl_df) > 1:
+            prev_tvl = tvl_df.iloc[1]['total_btc']
+            tvl_change = latest_tvl['total_btc'] - prev_tvl
+            st.metric(
+                "Recent Change",
+                f"{tvl_change:+.4f}",
+                help="Change since last snapshot"
+            )
+        else:
+            st.metric("Recent Change", "N/A")
     
     # TVL Chart
     st.markdown("### TVL Over Time")
-    if len(tvl_df) > 1:
-        fig = px.area(
-            tvl_df,
-            x='timestamp',
-            y='total_btc',
-            title='Total Value Locked (Excluding Stability Pool)',
-            labels={'timestamp': 'Time', 'total_btc': 'BTC Locked'},
-            color_discrete_sequence=['#3b82f6']
-        )
-        fig.update_layout(
-            hovermode='x unified',
-            showlegend=False,
-            height=400
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Insufficient TVL data for chart. Run the TVL tracker to collect more data points.")
-
-# BPD Supply Section
-if not bpd_df.empty:
-    st.markdown("## 💰 BPD Supply")
-    
-    # Get latest BPD supply values
-    latest_bpd = bpd_df.iloc[-1]
-    current_supply = latest_bpd['total_supply_bpd']
-    
-    # Calculate change if we have enough data
-    supply_change = 0
-    supply_change_pct = 0
-    if len(bpd_df) > 1:
-        previous_supply = bpd_df.iloc[-2]['total_supply_bpd'] if len(bpd_df) > 1 else current_supply
-        supply_change = current_supply - previous_supply
-        supply_change_pct = (supply_change / previous_supply * 100) if previous_supply > 0 else 0
-    
-    # BPD Supply metrics
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown(f"""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BPD Supply</div>
-            <div style="color: #1e293b; font-size: 1.875rem; font-weight: 700;">{current_supply:,.2f} BPD</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Latest Block</div>
-            <div style="color: #6366f1; font-size: 1.875rem; font-weight: 700;">{latest_bpd['block_number']:,}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        change_color = "#059669" if supply_change >= 0 else "#dc2626"
-        change_symbol = "+" if supply_change >= 0 else ""
-        st.markdown(f"""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Change</div>
-            <div style="color: {change_color}; font-size: 1.875rem; font-weight: 700;">{change_symbol}{supply_change:,.2f} BPD</div>
-            <div style="color: {change_color}; font-size: 0.875rem;">({change_symbol}{supply_change_pct:.2f}%)</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # BPD Supply Chart
-    st.markdown("### BPD Supply Over Time")
-    if len(bpd_df) > 1:
-        fig = px.line(
-            bpd_df,
-            x='timestamp',
-            y='total_supply_bpd',
-            title='Total BPD Supply',
-            labels={'timestamp': 'Time', 'total_supply_bpd': 'BPD Supply'},
-            color_discrete_sequence=['#f59e0b']
-        )
-        fig.update_layout(
-            hovermode='x unified',
-            showlegend=False,
-            height=400
-        )
-        fig.update_traces(line=dict(width=3))
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Insufficient BPD supply data for chart. Run the BPD supply tracker to collect more data points.")
-else:
-    st.markdown("## 💰 BPD Supply")
-    st.info("No BPD supply data available. Run the BPD supply tracker to start collecting data.")
-
-# Staking Gains Section
-st.markdown("## 🎯 Total Gains from Staking")
-
-# Metrics subsection
-st.markdown("### 📊 Current Metrics")
-
-if not staking_gains_df.empty:
-    # Get latest staking gains values
-    latest_gains = staking_gains_df.iloc[-1]
-    
-    # Staking Gains metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BPD Paid</div>
-            <div style="color: #8b5cf6; font-size: 1.875rem; font-weight: 700;">{latest_gains['total_bpd_paid']:,.2f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BPD Claimed</div>
-            <div style="color: #059669; font-size: 1.875rem; font-weight: 700;">{latest_gains['total_bpd_claimed']:,.2f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BTC Paid</div>
-            <div style="color: #f59e0b; font-size: 1.875rem; font-weight: 700;">{latest_gains['total_btc_paid']:,.4f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown(f"""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BTC Claimed</div>
-            <div style="color: #ef4444; font-size: 1.875rem; font-weight: 700;">{latest_gains['total_btc_claimed']:,.4f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-else:
-    # Show placeholder metrics when no data
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown("""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BPD Paid</div>
-            <div style="color: #8b5cf6; font-size: 1.875rem; font-weight: 700;">0.00</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BPD Claimed</div>
-            <div style="color: #059669; font-size: 1.875rem; font-weight: 700;">0.00</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BTC Paid</div>
-            <div style="color: #f59e0b; font-size: 1.875rem; font-weight: 700;">0.0000</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown("""
-        <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-            <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total BTC Claimed</div>
-            <div style="color: #ef4444; font-size: 1.875rem; font-weight: 700;">0.0000</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-# Cumulative Chart subsection
-st.markdown("### 📈 Cumulative Staking Gains Over Time")
-
-if not staking_gains_df.empty and len(staking_gains_df) > 1:
-    fig = go.Figure()
-    
-    # Add BPD lines
-    fig.add_trace(go.Scatter(
-        x=staking_gains_df['hour'],
-        y=staking_gains_df['total_bpd_paid'],
-        mode='lines',
-        name='BPD Paid',
-        line=dict(color='#8b5cf6', width=2),
-        yaxis='y'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=staking_gains_df['hour'],
-        y=staking_gains_df['total_bpd_claimed'],
-        mode='lines',
-        name='BPD Claimed',
-        line=dict(color='#059669', width=2),
-        yaxis='y'
-    ))
-    
-    # Add BTC lines
-    fig.add_trace(go.Scatter(
-        x=staking_gains_df['hour'],
-        y=staking_gains_df['total_btc_paid'],
-        mode='lines',
-        name='BTC Paid',
-        line=dict(color='#f59e0b', width=2),
-        yaxis='y2'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=staking_gains_df['hour'],
-        y=staking_gains_df['total_btc_claimed'],
-        mode='lines',
-        name='BTC Claimed',
-        line=dict(color='#ef4444', width=2),
-        yaxis='y2'
-    ))
-    
-    fig.update_layout(
-        title='Total Gains from Staking',
-        xaxis_title='Time',
-        yaxis=dict(
-            title='BPD Amount',
-            side='left'
-        ),
-        yaxis2=dict(
-            title='BTC Amount',
-            side='right',
-            overlaying='y'
-        ),
-        hovermode='x unified',
-        height=400,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
+    fig = px.line(
+        tvl_df.sort_values('timestamp'),
+        x='timestamp',
+        y='total_btc',
+        title='Total Value Locked Over Time',
+        labels={'timestamp': 'Time', 'total_btc': 'BTC Locked'}
     )
-    
+    fig.update_layout(hovermode='x unified')
     st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("Insufficient staking gains data for chart. Run the staking gains tracker to collect more data points.")
-
-# Daily Issuance Gain Chart subsection
-st.markdown("### 📊 Daily Issuance Gain from MP Staking")
-st.markdown("*Last 7 days - Fees generated vs gains claimed*")
-
-if not daily_gains_df.empty:
-    # Create bar chart showing daily fees vs claims
-    fig_daily = go.Figure()
     
-    # Convert to display format
-    daily_display = daily_gains_df.copy()
-    daily_display['day_str'] = daily_display['day'].dt.strftime('%b %d')
+    # Pool breakdown
+    st.markdown("### Pool Distribution")
+    col1, col2 = st.columns(2)
     
-    # Add bars for fees generated
-    fig_daily.add_trace(go.Bar(
-        x=daily_display['day_str'],
-        y=daily_display['bpd_paid'],
-        name='Fees generated (BPD)',
-        marker_color='#6366f1',
-        yaxis='y'
-    ))
-    
-    # Add bars for gains claimed
-    fig_daily.add_trace(go.Bar(
-        x=daily_display['day_str'],
-        y=daily_display['bpd_claimed'],
-        name='Gains claimed (BPD)',
-        marker_color='#f87171',
-        yaxis='y'
-    ))
-    
-    fig_daily.update_layout(
-        title='Daily BPD Fees Generated vs Gains Claimed',
-        xaxis_title='Date',
-        yaxis_title='BPD Amount',
-        barmode='group',
-        hovermode='x unified',
-        height=400,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
+    with col1:
+        # Current pool distribution pie chart
+        pools = ['Active Pool', 'Default Pool']
+        values = [latest_tvl['active_pool_btc'], latest_tvl['default_pool_btc']]
+        
+        fig = px.pie(
+            values=values,
+            names=pools,
+            title='Current Pool Distribution'
         )
-    )
+        st.plotly_chart(fig, use_container_width=True)
     
-    st.plotly_chart(fig_daily, use_container_width=True)
-else:
-    st.info("No daily staking gains data available yet. Run the staking gains tracker to start collecting data.")
-
-# Daily Summary subsection  
-st.markdown("### 📋 Daily Summary")
-
-if not daily_gains_df.empty and len(daily_gains_df) > 0:
-    daily_display = daily_gains_df.copy()
-    daily_display['day_str'] = daily_display['day'].dt.strftime('%b %d')
-    summary_table = daily_display[['day_str', 'bpd_paid', 'bpd_claimed']].copy()
-    summary_table.columns = ['Date', 'BPD Fees Generated', 'BPD Gains Claimed']
-    summary_table['BPD Fees Generated'] = summary_table['BPD Fees Generated'].round(2)
-    summary_table['BPD Gains Claimed'] = summary_table['BPD Gains Claimed'].round(2)
-    st.dataframe(summary_table, use_container_width=True, hide_index=True)
-else:
-    st.info("Daily summary will appear here when staking activity data is available.")
-
-# Redemption Gains Section
-st.markdown("## 🔄 Redemption Gain from MP Staking")
-st.markdown("### 📊 Daily BTC Redemption Gains")
-st.markdown("*Last 7 days - BTC fees from redemptions vs BTC gains claimed*")
-
-if not redemption_gains_df.empty:
-    # Create bar chart showing daily BTC redemption fees vs claims
-    fig_redemption = go.Figure()
-    
-    # Convert to display format
-    redemption_display = redemption_gains_df.copy()
-    redemption_display['day_str'] = redemption_display['day'].dt.strftime('%b %d')
-    
-    # Add bars for BTC fees from redemptions
-    fig_redemption.add_trace(go.Bar(
-        x=redemption_display['day_str'],
-        y=redemption_display['btc_paid'],
-        name='Fees generated (BTC)',
-        marker_color='#6366f1',
-        yaxis='y'
-    ))
-    
-    # Add bars for BTC gains claimed
-    fig_redemption.add_trace(go.Bar(
-        x=redemption_display['day_str'],
-        y=redemption_display['btc_claimed'],
-        name='Gains claimed (BTC)',
-        marker_color='#ef4444',
-        yaxis='y'
-    ))
-    
-    fig_redemption.update_layout(
-        title='Daily BTC Redemption Fees vs Gains Claimed',
-        xaxis_title='Date',
-        yaxis_title='BTC Amount',
-        barmode='group',
-        hovermode='x unified',
-        height=400,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
+    with col2:
+        # Pool trends over time
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=tvl_df['timestamp'],
+            y=tvl_df['active_pool_btc'],
+            mode='lines',
+            name='Active Pool',
+            line=dict(color='#3b82f6')
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=tvl_df['timestamp'],
+            y=tvl_df['default_pool_btc'],
+            mode='lines',
+            name='Default Pool',
+            line=dict(color='#ef4444')
+        ))
+        
+        fig.update_layout(
+            title='Pool Trends Over Time',
+            xaxis_title='Time',
+            yaxis_title='BTC Amount',
+            hovermode='x unified'
         )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+def render_bpd_analytics():
+    """Render BPD analytics section"""
+    bpd_df = fetch_bpd_supply_data()
+    
+    if bpd_df.empty:
+        st.warning("No BPD supply data available yet. The indexer will collect this data during regular operations.")
+        return
+    
+    # Get latest supply
+    latest_supply = bpd_df.iloc[0]  # Most recent
+    
+    st.markdown("## 🪙 BPD Supply Analytics")
+    
+    # Supply metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "Current Supply",
+            f"{latest_supply['total_supply_bpd']:,.2f}",
+            help="Total BPD tokens in circulation"
+        )
+    
+    with col2:
+        if len(bpd_df) > 1:
+            prev_supply = bpd_df.iloc[1]['total_supply_bpd']
+            supply_change = latest_supply['total_supply_bpd'] - prev_supply
+            st.metric(
+                "Recent Change",
+                f"{supply_change:+,.2f}",
+                help="Change since last snapshot"
+            )
+        else:
+            st.metric("Recent Change", "N/A")
+    
+    with col3:
+        # Calculate max supply if available
+        max_supply = bpd_df['total_supply_bpd'].max()
+        st.metric(
+            "Max Supply",
+            f"{max_supply:,.2f}",
+            help="Maximum supply recorded"
+        )
+    
+    with col4:
+        # Calculate min supply
+        min_supply = bpd_df['total_supply_bpd'].min()
+        st.metric(
+            "Min Supply",
+            f"{min_supply:,.2f}",
+            help="Minimum supply recorded"
+        )
+    
+    # Supply chart
+    st.markdown("### BPD Supply Over Time")
+    fig = px.line(
+        bpd_df.sort_values('timestamp'),
+        x='timestamp',
+        y='total_supply_bpd',
+        title='BPD Token Supply Over Time',
+        labels={'timestamp': 'Time', 'total_supply_bpd': 'BPD Supply'}
     )
-    
-    st.plotly_chart(fig_redemption, use_container_width=True)
-    
-    # Show redemption summary table
-    if len(redemption_display) > 0:
-        st.markdown("### 📋 Redemption Summary")
-        redemption_table = redemption_display[['day_str', 'btc_paid', 'btc_claimed']].copy()
-        redemption_table.columns = ['Date', 'BTC Fees Generated', 'BTC Gains Claimed']
-        redemption_table['BTC Fees Generated'] = redemption_table['BTC Fees Generated'].round(6)
-        redemption_table['BTC Gains Claimed'] = redemption_table['BTC Gains Claimed'].round(6)
-        st.dataframe(redemption_table, use_container_width=True, hide_index=True)
-else:
-    st.info("No redemption gains data available yet. Run the staking gains tracker to start collecting data.")
-    
-    # Show placeholder summary section
-    st.markdown("### 📋 Redemption Summary")
-    st.info("Redemption summary will appear here when redemption activity data is available.")
+    fig.update_layout(hovermode='x unified')
+    st.plotly_chart(fig, use_container_width=True)
 
-# ============================================
-# MP STAKING ANALYTICS (New Section)
-# ============================================
-st.markdown("## 🎯 MP Staking Analytics")
-st.markdown("Track total MP staked and claimed rewards over time (equivalent to Liquity's LQTY staking)")
-
-# Fetch MP staking data
-mp_staking_df = fetch_mp_staking_data()
-
-if not mp_staking_df.empty and len(mp_staking_df) > 1:
-    st.markdown("### 📈 Total MP Staked Over Time")
+def render_staking_gains_analytics():
+    """Render staking gains analytics section"""
+    staking_df = fetch_staking_gains_data()
     
-    # Create MP staking line chart
+    if staking_df.empty:
+        st.warning("No staking gains data available yet. The indexer will collect this data during regular operations.")
+        return
+    
+    st.markdown("## 📈 Gains from Staking Analytics")
+    
+    # Latest gains
+    latest_gains = staking_df.iloc[0]  # Most recent
+    
+    # Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "Latest Daily Gain",
+            f"{latest_gains.get('daily_gain', 0):.6f}",
+            help="Most recent daily gain amount"
+        )
+    
+    with col2:
+        total_gain = staking_df.get('cumulative_gain', staking_df.get('daily_gain', 0)).sum()
+        st.metric(
+            "Total Gains",
+            f"{total_gain:.6f}",
+            help="Total gains accumulated"
+        )
+    
+    with col3:
+        avg_gain = staking_df.get('daily_gain', 0).mean()
+        st.metric(
+            "Average Daily Gain",
+            f"{avg_gain:.6f}",
+            help="Average daily gain"
+        )
+    
+    with col4:
+        active_days = len(staking_df[staking_df.get('daily_gain', 0) > 0])
+        st.metric(
+            "Active Days",
+            f"{active_days:,}",
+            help="Days with positive gains"
+        )
+    
+    # Gains chart
+    st.markdown("### Daily Staking Gains")
+    fig = px.bar(
+        staking_df.sort_values('day'),
+        x='day',
+        y='daily_gain',
+        title='Daily Staking Gains Over Time',
+        labels={'day': 'Date', 'daily_gain': 'Daily Gain'}
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Cumulative gains if available
+    if 'cumulative_gain' in staking_df.columns:
+        st.markdown("### Cumulative Staking Gains")
+        fig = px.line(
+            staking_df.sort_values('day'),
+            x='day',
+            y='cumulative_gain',
+            title='Cumulative Staking Gains Over Time',
+            labels={'day': 'Date', 'cumulative_gain': 'Cumulative Gain'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+def render_redemption_gains_analytics():
+    """Render redemption gains analytics section"""
+    redemption_df = fetch_redemption_gains_data()
+    
+    if redemption_df.empty:
+        st.warning("No redemption gains data available yet. The indexer will collect this data during regular operations.")
+        return
+    
+    st.markdown("## 🔄 Redemption Gains from Staking Analytics")
+    
+    # Latest gains
+    latest_gains = redemption_df.iloc[0]  # Most recent
+    
+    # Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "Latest Daily Gain",
+            f"{latest_gains.get('daily_redemption_gain', 0):.6f}",
+            help="Most recent daily redemption gain"
+        )
+    
+    with col2:
+        total_gain = redemption_df.get('daily_redemption_gain', 0).sum()
+        st.metric(
+            "Total Redemption Gains",
+            f"{total_gain:.6f}",
+            help="Total redemption gains"
+        )
+    
+    with col3:
+        avg_gain = redemption_df.get('daily_redemption_gain', 0).mean()
+        st.metric(
+            "Average Daily Gain",
+            f"{avg_gain:.6f}",
+            help="Average daily redemption gain"
+        )
+    
+    with col4:
+        active_days = len(redemption_df[redemption_df.get('daily_redemption_gain', 0) > 0])
+        st.metric(
+            "Active Days",
+            f"{active_days:,}",
+            help="Days with redemption activity"
+        )
+    
+    # Redemption gains chart
+    st.markdown("### Daily Redemption Gains")
+    fig = px.bar(
+        redemption_df.sort_values('day'),
+        x='day',
+        y='daily_redemption_gain',
+        title='Daily Redemption Gains Over Time',
+        labels={'day': 'Date', 'daily_redemption_gain': 'Daily Redemption Gain'}
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+def render_mp_staking_analytics():
+    """Render MP staking analytics section"""
+    mp_staking_df = fetch_mp_staking_data()
+    
+    if mp_staking_df.empty:
+        st.warning("No MP staking data available yet. The indexer will collect this data once MP staking events are detected on-chain.")
+        return
+    
+    st.markdown("## 🎯 MP Staking Analytics")
+    st.markdown("Track total MP staked and claimed rewards over time (equivalent to Liquity's LQTY staking)")
+    
+    # Latest data
+    latest_data = mp_staking_df.iloc[0]  # Most recent
+    
+    # Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "Current MP Staked",
+            f"{latest_data['total_mp_staked']:,.2f}",
+            help="Total MP tokens currently staked"
+        )
+    
+    with col2:
+        st.metric(
+            "Total MP Claimed",
+            f"{latest_data['total_mp_claimed']:,.2f}",
+            help="Cumulative MP rewards claimed"
+        )
+    
+    with col3:
+        total_participants = len(mp_staking_df[mp_staking_df['total_mp_staked'] > 0])
+        st.metric(
+            "Active Hours",
+            f"{total_participants:,}",
+            help="Hours with active MP staking"
+        )
+    
+    with col4:
+        avg_hourly_claims = mp_staking_df['mp_claimed_in_hour'].mean()
+        st.metric(
+            "Avg Hourly Claims",
+            f"{avg_hourly_claims:.4f}",
+            help="Average MP claimed per hour"
+        )
+    
+    # Charts
+    st.markdown("### MP Staked Over Time")
     fig = px.line(
         mp_staking_df.sort_values('hour'),
         x='hour',
@@ -872,9 +902,39 @@ if not mp_staking_df.empty and len(mp_staking_df) > 1:
     fig.update_layout(hovermode='x unified')
     st.plotly_chart(fig, use_container_width=True)
     
-    # MP claimed analytics
-    st.markdown("### 💰 MP Claims Analytics")
+    # Combined staking and claims chart
+    st.markdown("### MP Staking vs Claims (Dune-style Analytics)")
     
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=mp_staking_df['hour'],
+        y=mp_staking_df['total_mp_staked'],
+        mode='lines',
+        name='Total MP Staked',
+        line=dict(color='#3b82f6', width=2)
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=mp_staking_df['hour'],
+        y=mp_staking_df['total_mp_claimed'],
+        mode='lines',
+        name='Total MP Claimed',
+        line=dict(color='#10b981', width=2)
+    ))
+    
+    fig.update_layout(
+        title='MP Staking Analytics (Total Staked vs Total Claimed)',
+        xaxis_title='Time',
+        yaxis_title='MP Amount',
+        hovermode='x unified',
+        legend=dict(x=0.02, y=0.98)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Claims analysis
+    st.markdown("### MP Claims Analysis")
     col1, col2 = st.columns(2)
     
     with col1:
@@ -905,313 +965,47 @@ if not mp_staking_df.empty and len(mp_staking_df) > 1:
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No MP claims recorded yet")
-    
-    # Combined staking and claims chart (like Dune Analytics)
-    st.markdown("### 🎯 MP Staking vs Claims (Dune-style Analytics)")
-    
-    fig = go.Figure()
-    
-    # Add total staked line
-    fig.add_trace(go.Scatter(
-        x=mp_staking_df['hour'],
-        y=mp_staking_df['total_mp_staked'],
-        mode='lines',
-        name='Total MP Staked',
-        line=dict(color='#3b82f6', width=2),
-        yaxis='y'
-    ))
-    
-    # Add total claimed line
-    fig.add_trace(go.Scatter(
-        x=mp_staking_df['hour'],
-        y=mp_staking_df['total_mp_claimed'],
-        mode='lines',
-        name='Total MP Claimed',
-        line=dict(color='#10b981', width=2),
-        yaxis='y'
-    ))
-    
-    fig.update_layout(
-        title='MP Staking Analytics (Total Staked vs Total Claimed)',
-        xaxis_title='Time',
-        yaxis_title='MP Amount',
-        hovermode='x unified',
-        legend=dict(x=0.02, y=0.98)
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # MP staking summary metrics
-    st.markdown("### 📊 MP Staking Summary")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    latest_data = mp_staking_df.iloc[-1] if not mp_staking_df.empty else None
-    
-    if latest_data is not None:
-        with col1:
-            st.metric(
-                "Current MP Staked",
-                f"{latest_data['total_mp_staked']:,.2f}",
-                help="Total MP tokens currently staked"
-            )
-        
-        with col2:
-            st.metric(
-                "Total MP Claimed",
-                f"{latest_data['total_mp_claimed']:,.2f}",
-                help="Cumulative MP rewards claimed"
-            )
-        
-        with col3:
-            total_participants = len(mp_staking_df[mp_staking_df['total_mp_staked'] > 0])
-            st.metric(
-                "Active Hours",
-                f"{total_participants:,}",
-                help="Hours with active MP staking"
-            )
-        
-        with col4:
-            avg_hourly_claims = mp_staking_df['mp_claimed_in_hour'].mean()
-            st.metric(
-                "Avg Hourly Claims",
-                f"{avg_hourly_claims:.4f}",
-                help="Average MP claimed per hour"
-            )
 
-else:
-    st.info("No MP staking data available yet. The indexer will collect this data once MP staking events are detected on-chain.")
+# ===========================================
+# MAIN CONTENT RENDERING
+# ===========================================
 
-# Display metrics
-st.markdown("## 📈 Key Metrics")
-col1, col2, col3, col4, col5 = st.columns(5)
+# Render content based on selected section
+if analytics_section == "🏠 Overview":
+    render_overview()
+elif analytics_section == "🏦 Vault Analytics":
+    render_vault_analytics()
+elif analytics_section == "💰 TVL Analytics":
+    render_tvl_analytics()
+elif analytics_section == "🪙 BPD Analytics":
+    render_bpd_analytics()
+elif analytics_section == "📈 Gains from Staking Analytics":
+    render_staking_gains_analytics()
+elif analytics_section == "🔄 Redemption Gains from Staking Analytics":
+    render_redemption_gains_analytics()
+elif analytics_section == "🎯 MP Staking Analytics":
+    render_mp_staking_analytics()
 
-with col1:
-    st.markdown(f"""
-    <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-        <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Total Events</div>
-        <div style="color: #1e293b; font-size: 1.875rem; font-weight: 700;">{stats['total_events']:,}</div>
-    </div>
-    """, unsafe_allow_html=True)
+# ===========================================
+# FOOTER
+# ===========================================
 
-with col2:
-    st.markdown(f"""
-    <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-        <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Unique Vaults</div>
-        <div style="color: #1e293b; font-size: 1.875rem; font-weight: 700;">{stats['unique_vaults']:,}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col3:
-    st.markdown(f"""
-    <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-        <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Vault Updates</div>
-        <div style="color: #059669; font-size: 1.875rem; font-weight: 700;">{stats['total_updates']:,}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col4:
-    st.markdown(f"""
-    <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-        <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Liquidations</div>
-        <div style="color: #dc2626; font-size: 1.875rem; font-weight: 700;">{stats['total_liquidations']:,}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col5:
-    st.markdown(f"""
-    <div style="background-color: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; text-align: center;">
-        <div style="color: #64748b; font-size: 0.875rem; font-weight: 500;">Latest Block</div>
-        <div style="color: #1e293b; font-size: 1.875rem; font-weight: 700;">{stats['latest_block']:,}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# Data processing
-if not df.empty:
-    
-    # Convert timestamp to datetime with robust error handling
-    try:
-        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
-        # Remove any rows with invalid timestamps
-        df = df.dropna(subset=['timestamp'])
-        if df.empty:
-            st.error("No valid timestamp data found")
-            st.stop()
-        df['date'] = df['timestamp'].dt.date
-        df['hour'] = df['timestamp'].dt.hour
-    except Exception as e:
-        st.error(f"Error processing timestamps: {e}")
-        st.code(f"Sample timestamp data: {df['timestamp'].head().tolist()}")
-        st.stop()
-    
-    # Create tabs for different visualizations
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Overview", "📈 Trends", "🏆 Top Vaults", "🔍 Event Details", "📋 Raw Data"])
-    
-    with tab1:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Event type distribution
-            st.markdown("### Event Type Distribution")
-            event_counts = df['event_type'].value_counts()
-            fig = px.pie(
-                values=event_counts.values,
-                names=event_counts.index,
-                color_discrete_map={'VaultUpdated': '#3b82f6', 'VaultLiquidated': '#ef4444'}
-            )
-            fig.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # Hourly distribution
-            st.markdown("### Activity by Hour of Day")
-            hourly_data = df.groupby('hour').size().reset_index(name='count')
-            fig = px.bar(
-                hourly_data, 
-                x='hour', 
-                y='count',
-                labels={'hour': 'Hour of Day', 'count': 'Event Count'},
-                color_discrete_sequence=['#3b82f6']
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with tab2:
-        # Daily events trend
-        st.markdown("### Daily Event Trends")
-        daily_events = df.groupby(['date', 'event_type']).size().reset_index(name='count')
-        fig = px.line(
-            daily_events,
-            x='date',
-            y='count',
-            color='event_type',
-            labels={'date': 'Date', 'count': 'Event Count'},
-            color_discrete_map={'VaultUpdated': '#3b82f6', 'VaultLiquidated': '#ef4444'}
-        )
-        fig.update_layout(hovermode='x unified')
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Cumulative events
-        st.markdown("### Cumulative Events Over Time")
-        df_sorted = df.sort_values('timestamp')
-        df_sorted['cumulative'] = range(1, len(df_sorted) + 1)
-        fig = px.area(
-            df_sorted,
-            x='timestamp',
-            y='cumulative',
-            labels={'timestamp': 'Time', 'cumulative': 'Total Events'},
-            color_discrete_sequence=['#10b981']
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with tab3:
-        # Top vaults
-        st.markdown("### Most Active Vaults")
-        if 'vault_id' in df.columns:
-            vault_activity = df[df['vault_id'].notna()].groupby('vault_id').agg({
-                'event_type': 'count',
-                'timestamp': ['min', 'max']
-            }).reset_index()
-            vault_activity.columns = ['vault_id', 'event_count', 'first_seen', 'last_seen']
-            vault_activity = vault_activity.sort_values('event_count', ascending=False).head(10)
-            
-            # Add event type breakdown
-            vault_events = df[df['vault_id'].isin(vault_activity['vault_id'])].groupby(['vault_id', 'event_type']).size().unstack(fill_value=0)
-            vault_activity = vault_activity.merge(vault_events, on='vault_id', how='left')
-            
-            # Display as table
-            st.dataframe(
-                vault_activity,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "vault_id": st.column_config.TextColumn("Vault ID", width="medium"),
-                    "event_count": st.column_config.NumberColumn("Total Events", format="%d"),
-                    "first_seen": st.column_config.DatetimeColumn("First Seen", format="YYYY-MM-DD HH:mm"),
-                    "last_seen": st.column_config.DatetimeColumn("Last Seen", format="YYYY-MM-DD HH:mm"),
-                }
-            )
-            
-            # Bar chart of top vaults
-            fig = px.bar(
-                vault_activity.head(10),
-                x='vault_id',
-                y='event_count',
-                labels={'vault_id': 'Vault ID', 'event_count': 'Event Count'},
-                color_discrete_sequence=['#3b82f6']
-            )
-            fig.update_layout(xaxis_tickangle=45)
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with tab4:
-        # Recent events
-        st.markdown("### Recent Events")
-        
-        # Event filter
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            search_vault = st.text_input("Search by Vault ID", placeholder="Enter vault ID...")
-        with col2:
-            limit = st.number_input("Show events", min_value=10, max_value=100, value=20, step=10)
-        
-        recent_df = df.sort_values('timestamp', ascending=False)
-        
-        if search_vault:
-            recent_df = recent_df[recent_df['vault_id'].str.contains(search_vault, case=False, na=False)]
-        
-        recent_df = recent_df.head(limit)
-        
-        # Display events
-        for _, event in recent_df.iterrows():
-            event_color = "#3b82f6" if event['event_type'] == 'VaultUpdated' else "#ef4444"
-            st.markdown(f"""
-            <div style="border-left: 3px solid {event_color}; padding: 10px; margin: 10px 0; background-color: #f9fafb;">
-                <strong>{event['event_type']}</strong> | Block: {event['block_number']} | {event['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}
-                <br>Vault: <code>{event['vault_id']}</code>
-                <br>Tx: <code>{event['transaction_hash']}</code>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    with tab5:
-        # Raw data
-        st.markdown("### Raw Event Data")
-        st.info(f"Showing {len(df)} events from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-        
-        # Download button
-        csv = df.to_csv(index=False)
-        st.download_button(
-            label="📥 Download CSV",
-            data=csv,
-            file_name=f"vault_events_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-        )
-        
-        # Display dataframe
-        st.dataframe(
-            df.sort_values('timestamp', ascending=False),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "timestamp": st.column_config.DatetimeColumn("Timestamp", format="YYYY-MM-DD HH:mm:ss"),
-                "block_number": st.column_config.NumberColumn("Block", format="%d"),
-                "vault_id": st.column_config.TextColumn("Vault ID"),
-                "event_type": st.column_config.TextColumn("Event Type"),
-                "transaction_hash": st.column_config.TextColumn("Transaction Hash"),
-            }
-        )
-else:
-    st.warning("No data available for the selected time range and filters.")
-
-# Auto-refresh (moved to sidebar only)  
+# Auto-refresh option in sidebar
 auto_refresh = st.sidebar.checkbox("Auto-refresh", value=False)
 
-# Footer - only render once at the end
+# Footer
 st.markdown("---")
 st.markdown(
     f"""
     <div style="text-align: center; color: #6b7280; padding: 1rem;">
-        Money Protocol Indexer Analytics | Real-time RSK Testnet Data
+        Money Protocol Analytics Dashboard | Real-time RSK Testnet Data
         <br>Last updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}<br>
         <small>Auto-refresh: {'Enabled' if auto_refresh else 'Disabled'}</small>
     </div>
     """,
     unsafe_allow_html=True
 )
+
+# Auto-refresh logic
+if auto_refresh:
+    st.rerun()
