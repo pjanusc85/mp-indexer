@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS pool_balance_events (
 CREATE INDEX IF NOT EXISTS idx_pool_balance_events_timestamp ON pool_balance_events(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_pool_balance_events_block ON pool_balance_events(block_number DESC);
 CREATE INDEX IF NOT EXISTS idx_pool_balance_events_pool ON pool_balance_events(pool_address, pool_type);
-CREATE INDEX IF NOT EXISTS idx_pool_balance_events_hour ON pool_balance_events(DATE_TRUNC('hour', timestamp));
+-- Note: Removed DATE_TRUNC index as it requires IMMUTABLE functions
 
 -- Hourly balance aggregation table (equivalent to Dune's 't' CTE)
 CREATE TABLE IF NOT EXISTS pool_balance_hourly (
