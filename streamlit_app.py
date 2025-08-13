@@ -237,19 +237,15 @@ def fetch_staking_gains_data(start_date, end_date):
 def fetch_staking_gains_daily():
     """Fetch daily staking gains data for issuance gain chart (last 7 days)"""
     try:
-        headers = {
-            'apikey': SUPABASE_KEY,
-            'Authorization': f'Bearer {SUPABASE_KEY}',
-        }
+        # Use dedicated API endpoint for daily data
+        url = 'https://mp-indexer.vercel.app/api/daily-staking-gains'
         
-        url = f'{SUPABASE_URL}/rest/v1/staking_gains_daily?select=*&order=day.desc'
-        
-        response = requests.get(url, headers=headers)
+        response = requests.get(url)
         
         if response.status_code == 200:
-            data = response.json()
-            if data:
-                df = pd.DataFrame(data)
+            result = response.json()
+            if result.get('success') and result.get('data'):
+                df = pd.DataFrame(result['data'])
                 df['day'] = pd.to_datetime(df['day'])
                 # Fill NaN values with 0
                 df = df.fillna(0)
@@ -259,7 +255,7 @@ def fetch_staking_gains_daily():
         else:
             # Don't show warning for 404, as table might not exist yet
             if response.status_code != 404:
-                st.sidebar.warning(f"Daily staking gains data unavailable: {response.status_code}")
+                st.sidebar.warning(f"Daily staking gains API unavailable: {response.status_code}")
             return pd.DataFrame()
             
     except Exception as e:
