@@ -9,10 +9,10 @@ const BORROWER_OPERATIONS_ADDRESS = '0xA8437A34a61B64764EA261e9cf85403c0Bb57e25'
 const VAULT_MANAGER_ADDRESS = '0x0ecCcA821f078f394F2Bb1f3d615aD73729A9892';
 const MP_STAKING_ADDRESS = '0x6651E5d0C04CBefCa1ce9eDDd479BA8f7B4A6976';
 
-// Event signatures
-const BPD_BORROWING_FEE_PAID_SIGNATURE = '0x6d4c2e2f0e0edfaaab6eafd7e64b31b7caf5e07d2463fd8f94da3e3b9d8b4df8'; // Placeholder - need actual
-const REDEMPTION_SIGNATURE = '0xf5e7666b5d20a1d4dba7e96e8e0c5b3c1f4e7b4b2a1a6d2c7b3e5f4a9b8c7d6e5'; // Placeholder - need actual  
-const STAKING_GAINS_WITHDRAWN_SIGNATURE = '0xa1b2c3d4e5f6789012345678901234567890123456789012345678901234567890'; // Placeholder - need actual
+// Event signatures - calculated from event names
+const BPD_BORROWING_FEE_PAID_SIGNATURE = '0xe3f81eee9eb7b21bda5672f049187ddcd1833f6de3018f5ff2a716efba828df0';
+const REDEMPTION_SIGNATURE = '0x43a3f4082a4dbc33d78e317d2497d3a730bc7fc3574159dcea1056e62e5d9ad8';
+const STAKING_GAINS_WITHDRAWN_SIGNATURE = '0xf744d34ca1cb25acfa4180df5f09a67306107110a9f4b6ed99bb3be259738215';
 
 // Event ABIs
 const BORROWING_FEE_ABI = [
@@ -36,7 +36,7 @@ async function getBorrowingFeeEvents(fromBlock, toBlock) {
     // Get BPDBorrowingFeePaid events
     const logs = await provider.getLogs({
       address: BORROWER_OPERATIONS_ADDRESS,
-      topics: [ethers.id('BPDBorrowingFeePaid(address,uint256)')], // Calculate from event signature
+      topics: [BPD_BORROWING_FEE_PAID_SIGNATURE],
       fromBlock,
       toBlock
     });
@@ -83,7 +83,7 @@ async function getRedemptionEvents(fromBlock, toBlock) {
     // Get Redemption events
     const logs = await provider.getLogs({
       address: VAULT_MANAGER_ADDRESS,
-      topics: [ethers.id('Redemption(uint256,uint256,uint256,uint256)')], // Calculate from event signature
+      topics: [REDEMPTION_SIGNATURE],
       fromBlock,
       toBlock
     });
@@ -132,7 +132,7 @@ async function getStakingGainsEvents(fromBlock, toBlock) {
     // Get StakingGainsWithdrawn events
     const logs = await provider.getLogs({
       address: MP_STAKING_ADDRESS,
-      topics: [ethers.id('StakingGainsWithdrawn(address,uint256,uint256)')], // Calculate from event signature
+      topics: [STAKING_GAINS_WITHDRAWN_SIGNATURE],
       fromBlock,
       toBlock
     });
