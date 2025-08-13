@@ -306,6 +306,70 @@ def fetch_mp_staking_data():
         st.sidebar.error(f"Error fetching MP staking data: {str(e)}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=60)
+def fetch_balance_tracking_data():
+    """Fetch balance tracking data from Supabase (Dune Analytics style)"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        # Fetch hourly balance data
+        url = f'{SUPABASE_URL}/rest/v1/pool_balance_hourly?select=*&order=hour.desc&limit=168'  # Last 7 days
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['hour'] = pd.to_datetime(df['hour'], format='ISO8601')
+                df = df.fillna(0)
+                # Convert to numeric
+                numeric_columns = ['hourly_change_btc', 'ending_balance_btc', 'transaction_count', 'btc_price_usd', 'ending_balance_usd']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            return pd.DataFrame()
+    except Exception as e:
+        st.sidebar.error(f"Error fetching balance tracking data: {str(e)}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=60)
+def fetch_current_pool_balances():
+    """Fetch current pool balances from Supabase view"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        url = f'{SUPABASE_URL}/rest/v1/pool_balances_current?select=*'
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['last_updated'] = pd.to_datetime(df['last_updated'], format='ISO8601')
+                # Convert to numeric
+                numeric_columns = ['current_balance_btc', 'current_balance_usd', 'last_btc_price']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            return pd.DataFrame()
+    except Exception as e:
+        st.sidebar.error(f"Error fetching current pool balances: {str(e)}")
+        return pd.DataFrame()
+
 def calculate_summary_stats(df):
     """Calculate summary statistics from vault events"""
     if df.empty:
@@ -546,6 +610,8 @@ def render_vault_analytics():
 def render_tvl_analytics():
     """Render TVL analytics section"""
     tvl_df = fetch_tvl_data()
+    balance_tracking_df = fetch_balance_tracking_data()
+    current_balances_df = fetch_current_pool_balances()
     
     if tvl_df.empty:
         st.warning("No TVL data available yet. The indexer will collect this data during regular operations.")
@@ -593,36 +659,24 @@ def render_tvl_analytics():
         else:
             st.metric("Recent Change", "N/A")
     
-    # TVL Chart
-    st.markdown("### TVL Over Time")
-    fig = px.line(
-        tvl_df.sort_values('timestamp'),
-        x='timestamp',
-        y='total_btc',
-        title='Total Value Locked Over Time',
-        labels={'timestamp': 'Time', 'total_btc': 'BTC Locked'}
-    )
-    fig.update_layout(hovermode='x unified')
-    st.plotly_chart(fig, use_container_width=True)
+    # Create tabs for different TVL views
+    tab1, tab2, tab3 = st.tabs(["📈 TVL Trends", "📊 Pool Distribution", "🔍 Balance Tracking (Dune Style)"])
     
-    # Pool breakdown
-    st.markdown("### Pool Distribution")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Current pool distribution pie chart
-        pools = ['Active Pool', 'Default Pool']
-        values = [latest_tvl['active_pool_btc'], latest_tvl['default_pool_btc']]
-        
-        fig = px.pie(
-            values=values,
-            names=pools,
-            title='Current Pool Distribution'
+    with tab1:
+        # TVL Chart
+        st.markdown("### TVL Over Time")
+        fig = px.line(
+            tvl_df.sort_values('timestamp'),
+            x='timestamp',
+            y='total_btc',
+            title='Total Value Locked Over Time',
+            labels={'timestamp': 'Time', 'total_btc': 'BTC Locked'}
         )
+        fig.update_layout(hovermode='x unified')
         st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
+        
         # Pool trends over time
+        st.markdown("### Pool Trends Over Time")
         fig = go.Figure()
         
         fig.add_trace(go.Scatter(
@@ -642,13 +696,166 @@ def render_tvl_analytics():
         ))
         
         fig.update_layout(
-            title='Pool Trends Over Time',
+            title='Individual Pool Balances Over Time',
             xaxis_title='Time',
             yaxis_title='BTC Amount',
             hovermode='x unified'
         )
         
         st.plotly_chart(fig, use_container_width=True)
+    
+    with tab2:
+        # Pool breakdown
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Current pool distribution pie chart
+            pools = ['Active Pool', 'Default Pool']
+            values = [latest_tvl['active_pool_btc'], latest_tvl['default_pool_btc']]
+            
+            fig = px.pie(
+                values=values,
+                names=pools,
+                title='Current Pool Distribution'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Current balances table (if available from balance tracking)
+            if not current_balances_df.empty:
+                st.markdown("### Current Pool Balances")
+                
+                # Format the data for display
+                display_df = current_balances_df.copy()
+                display_df = display_df.rename(columns={
+                    'pool_type': 'Pool Type',
+                    'current_balance_btc': 'Balance (BTC)',
+                    'current_balance_usd': 'Balance (USD)',
+                    'last_updated': 'Last Updated'
+                })
+                
+                # Format numeric columns
+                if 'Balance (BTC)' in display_df.columns:
+                    display_df['Balance (BTC)'] = display_df['Balance (BTC)'].round(8)
+                if 'Balance (USD)' in display_df.columns:
+                    display_df['Balance (USD)'] = display_df['Balance (USD)'].round(2)
+                
+                st.dataframe(
+                    display_df[['Pool Type', 'Balance (BTC)', 'Balance (USD)', 'Last Updated']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info("Balance tracking data will appear here once the enhanced indexer runs")
+    
+    with tab3:
+        # Balance tracking data (Dune Analytics style)
+        st.markdown("### 📊 Balance Tracking Analytics (Dune Style)")
+        st.markdown("Detailed hourly balance changes and trends equivalent to Dune Analytics queries")
+        
+        if not balance_tracking_df.empty:
+            # Balance tracking metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                total_hours = len(balance_tracking_df)
+                st.metric("Hours Tracked", f"{total_hours:,}")
+            
+            with col2:
+                avg_change = balance_tracking_df['hourly_change_btc'].mean()
+                st.metric("Avg Hourly Change", f"{avg_change:.6f} BTC")
+            
+            with col3:
+                total_transactions = balance_tracking_df['transaction_count'].sum()
+                st.metric("Total Transactions", f"{total_transactions:,}")
+            
+            with col4:
+                active_pools = balance_tracking_df['pool_type'].nunique()
+                st.metric("Active Pools", f"{active_pools}")
+            
+            # Balance tracking data table
+            st.markdown("### Hourly Balance Changes")
+            
+            # Format the data for display
+            display_df = balance_tracking_df.copy()
+            display_df = display_df.rename(columns={
+                'hour': 'Hour',
+                'pool_type': 'Pool Type',
+                'hourly_change_btc': 'Hourly Change (BTC)',
+                'ending_balance_btc': 'Ending Balance (BTC)',
+                'transaction_count': 'Transactions',
+                'ending_balance_usd': 'Ending Balance (USD)'
+            })
+            
+            # Format numeric columns
+            numeric_format_cols = ['Hourly Change (BTC)', 'Ending Balance (BTC)']
+            for col in numeric_format_cols:
+                if col in display_df.columns:
+                    display_df[col] = display_df[col].round(8)
+            
+            if 'Ending Balance (USD)' in display_df.columns:
+                display_df['Ending Balance (USD)'] = display_df['Ending Balance (USD)'].round(2)
+            
+            # Show data table with filters
+            pool_filter = st.multiselect(
+                "Filter by Pool Type",
+                options=display_df['Pool Type'].unique(),
+                default=display_df['Pool Type'].unique()
+            )
+            
+            filtered_df = display_df[display_df['Pool Type'].isin(pool_filter)]
+            
+            st.dataframe(
+                filtered_df[['Hour', 'Pool Type', 'Hourly Change (BTC)', 'Ending Balance (BTC)', 'Transactions']].head(50),
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Download option
+            csv = filtered_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Balance Tracking Data",
+                data=csv,
+                file_name=f"balance_tracking_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+            
+            # Balance changes chart
+            if len(filtered_df) > 1:
+                st.markdown("### Balance Changes Over Time")
+                
+                fig = go.Figure()
+                
+                for pool_type in filtered_df['Pool Type'].unique():
+                    pool_data = filtered_df[filtered_df['Pool Type'] == pool_type].sort_values('Hour')
+                    
+                    fig.add_trace(go.Scatter(
+                        x=pool_data['Hour'],
+                        y=pool_data['Ending Balance (BTC)'],
+                        mode='lines+markers',
+                        name=f'{pool_type.title()} Pool',
+                        line=dict(width=2)
+                    ))
+                
+                fig.update_layout(
+                    title='Pool Balances Over Time (Dune Analytics Style)',
+                    xaxis_title='Time',
+                    yaxis_title='Balance (BTC)',
+                    hovermode='x unified',
+                    legend=dict(x=0.02, y=0.98)
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+        else:
+            st.info("Balance tracking data will appear here once the enhanced indexer runs with the new balance tracking module.")
+            st.markdown("""
+            **What this will show:**
+            - Hourly balance changes for each pool (Active, Default, Stability, CollSurplus)
+            - Cumulative balance tracking over time
+            - Transaction counts and flow analysis
+            - Equivalent to Dune Analytics balance tracking queries
+            """))
 
 def render_bpd_analytics():
     """Render BPD analytics section"""
