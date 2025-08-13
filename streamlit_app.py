@@ -233,6 +233,39 @@ def fetch_staking_gains_data(start_date, end_date):
         st.sidebar.error(f"Error fetching staking gains data: {str(e)}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=60)
+def fetch_staking_gains_daily():
+    """Fetch daily staking gains data for issuance gain chart (last 7 days)"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        url = f'{SUPABASE_URL}/rest/v1/staking_gains_daily?select=*&order=day.desc'
+        
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['day'] = pd.to_datetime(df['day'])
+                # Fill NaN values with 0
+                df = df.fillna(0)
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            # Don't show warning for 404, as table might not exist yet
+            if response.status_code != 404:
+                st.sidebar.warning(f"Daily staking gains data unavailable: {response.status_code}")
+            return pd.DataFrame()
+            
+    except Exception as e:
+        st.sidebar.error(f"Error fetching daily staking gains data: {str(e)}")
+        return pd.DataFrame()
+
 @st.cache_data(ttl=60)  # Cache for 1 minute  
 def fetch_vault_events(start_date, end_date, event_types):
     try:
@@ -331,6 +364,7 @@ stats = fetch_summary_stats(start_date, end_date)
 tvl_df = fetch_tvl_data(start_date, end_date)
 bpd_df = fetch_bpd_supply_data(start_date, end_date)
 staking_gains_df = fetch_staking_gains_data(start_date, end_date)
+daily_gains_df = fetch_staking_gains_daily()
 
 # TVL Section
 if not tvl_df.empty:
@@ -577,6 +611,62 @@ if not staking_gains_df.empty:
         )
         
         st.plotly_chart(fig, use_container_width=True)
+        
+        # Daily Issuance Gain Chart (Last 7 Days)
+        if not daily_gains_df.empty:
+            st.markdown("### 📊 Issuance Gain from MP Staking (Last 7 Days)")
+            
+            # Create bar chart showing daily fees vs claims
+            fig_daily = go.Figure()
+            
+            # Convert to display format
+            daily_display = daily_gains_df.copy()
+            daily_display['day_str'] = daily_display['day'].dt.strftime('%b %d')
+            
+            # Add bars for fees generated
+            fig_daily.add_trace(go.Bar(
+                x=daily_display['day_str'],
+                y=daily_display['bpd_paid'],
+                name='Fees generated (BPD)',
+                marker_color='#6366f1',
+                yaxis='y'
+            ))
+            
+            # Add bars for gains claimed
+            fig_daily.add_trace(go.Bar(
+                x=daily_display['day_str'],
+                y=daily_display['bpd_claimed'],
+                name='Gains claimed (BPD)',
+                marker_color='#f87171',
+                yaxis='y'
+            ))
+            
+            fig_daily.update_layout(
+                title='Daily BPD Fees Generated vs Gains Claimed',
+                xaxis_title='Date',
+                yaxis_title='BPD Amount',
+                barmode='group',
+                hovermode='x unified',
+                height=400,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+            
+            st.plotly_chart(fig_daily, use_container_width=True)
+            
+            # Show summary table
+            if len(daily_display) > 0:
+                st.markdown("#### 📋 Daily Summary")
+                summary_table = daily_display[['day_str', 'bpd_paid', 'bpd_claimed']].copy()
+                summary_table.columns = ['Date', 'BPD Fees Generated', 'BPD Gains Claimed']
+                summary_table['BPD Fees Generated'] = summary_table['BPD Fees Generated'].round(2)
+                summary_table['BPD Gains Claimed'] = summary_table['BPD Gains Claimed'].round(2)
+                st.dataframe(summary_table, use_container_width=True, hide_index=True)
     else:
         st.info("Insufficient staking gains data for chart. Run the staking gains tracker to collect more data points.")
 else:
