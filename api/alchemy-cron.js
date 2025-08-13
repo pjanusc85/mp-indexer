@@ -6,7 +6,10 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
 const CONTRACTS = {
   vaultManager: process.env.VAULT_MANAGER_ADDRESS || '0x0eccca821f078f394f2bb1f3d615ad73729a9892',
-  sortedVaults: process.env.SORTED_VAULTS_ADDRESS || '0xDBA59981bda70CCBb5458e907f5A0729F1d24a05'
+  sortedVaults: process.env.SORTED_VAULTS_ADDRESS || '0xDBA59981bda70CCBb5458e907f5A0729F1d24a05',
+  activePool: '0x061c6A8EBb521fe74d3E07c9b835A236ac051e8F',
+  defaultPool: '0x9BcA57F7D3712f46cd2D650a78f68e7928e866E2',
+  stabilityPool: '0x11ad81e3E29DBA233aF88dCb4b169670FA2b8C65'
 };
 
 const EVENT_SIGNATURES = {
@@ -14,6 +17,7 @@ const EVENT_SIGNATURES = {
   VaultLiquidated: '0x7495fe27166ca7c7fb38d10e09b0d0f029a5704bac8952a9545063644de73c10'
 };
 
+// === VAULT EVENT INDEXING ===
 async function getLastIndexedBlock() {
   try {
     const response = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?select=last_block&contract_address=eq.${CONTRACTS.vaultManager}&order=last_updated.desc&limit=1`, {
@@ -76,7 +80,6 @@ async function saveVaultEvent(eventData) {
     });
 
     if (!response.ok) {
-      // Check if it's a unique constraint violation (event already exists)
       if (response.status === 409) {
         console.log(`📝 ${eventData.event_type} event already exists in database`);
         return true;
@@ -107,13 +110,116 @@ async function getLogsWithRetry(provider, fromBlock, toBlock, eventType, maxRetr
     } catch (error) {
       console.error(`❌ Attempt ${attempt}/${maxRetries} failed for ${eventType}:`, error.message);
       if (attempt === maxRetries) throw error;
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
     }
   }
 }
 
+// === TVL TRACKING ===
+async function calculateTVL(blockNumber) {
+  try {
+    const provider = new ethers.JsonRpcProvider(ALCHEMY_RPC_URL);
+    
+    const activePoolBalance = await provider.getBalance(CONTRACTS.activePool, blockNumber);
+    const defaultPoolBalance = await provider.getBalance(CONTRACTS.defaultPool, blockNumber);
+    
+    const totalBTC = ethers.formatEther(activePoolBalance + defaultPoolBalance);
+    
+    return {
+      block_number: blockNumber,
+      active_pool_btc: parseFloat(ethers.formatEther(activePoolBalance)),
+      default_pool_btc: parseFloat(ethers.formatEther(defaultPoolBalance)),
+      total_btc: parseFloat(totalBTC),
+      timestamp: new Date().toISOString()
+    };
+    
+  } catch (error) {
+    console.error('Error calculating TVL:', error);
+    throw error;
+  }
+}
+
+async function saveTVLSnapshot(tvlData) {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/tvl_snapshots`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(tvlData)
+    });
+
+    if (!response.ok) {
+      throw new Error(`TVL save failed: ${response.status}`);
+    }
+
+    console.log('✅ TVL snapshot saved');
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Error saving TVL snapshot:', error);
+    return false;
+  }
+}
+
+// === STAKING GAINS DATA ===
+async function fetchStakingGainsData() {
+  try {
+    const headers = {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json'
+    };
+    
+    const url = `${SUPABASE_URL}/rest/v1/staking_gains_daily?select=*&order=day.desc`;
+    const response = await fetch(url, { headers });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`✅ Retrieved ${data.length} days of staking gains data`);
+      return data;
+    } else {
+      console.warn('⚠️ Staking gains data not available');
+      return [];
+    }
+  } catch (error) {
+    console.error('❌ Error fetching staking gains:', error);
+    return [];
+  }
+}
+
+// === REDEMPTION GAINS DATA ===
+async function fetchRedemptionGainsData() {
+  try {
+    const headers = {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json'
+    };
+    
+    const url = `${SUPABASE_URL}/rest/v1/redemption_gains_daily?select=*&order=day.desc`;
+    const response = await fetch(url, { headers });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`✅ Retrieved ${data.length} days of redemption gains data`);
+      return data;
+    } else {
+      console.warn('⚠️ Redemption gains data not available');
+      return [];
+    }
+  } catch (error) {
+    console.error('❌ Error fetching redemption gains:', error);
+    return [];
+  }
+}
+
+// === UNIFIED API HANDLER ===
 export default async function handler(req, res) {
-  console.log('🚀 Alchemy-Powered Cron Indexer Started - v2');
+  console.log(`🚀 Unified Money Protocol Indexer Started - ${new Date().toISOString()}`);
   
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     return res.status(500).json({ 
@@ -122,6 +228,30 @@ export default async function handler(req, res) {
     });
   }
 
+  // Handle different endpoints based on URL path
+  const url = new URL(req.url, `https://${req.headers.host}`);
+  const pathname = url.pathname;
+
+  // API endpoint routing
+  if (pathname.includes('daily-staking-gains')) {
+    const stakingData = await fetchStakingGainsData();
+    return res.status(200).json({
+      success: true,
+      message: `Retrieved ${stakingData.length} days of staking gains data`,
+      data: stakingData
+    });
+  }
+
+  if (pathname.includes('redemption-gains')) {
+    const redemptionData = await fetchRedemptionGainsData();
+    return res.status(200).json({
+      success: true,
+      message: `Retrieved ${redemptionData.length} days of redemption gains data`,
+      data: redemptionData
+    });
+  }
+
+  // Default: Main indexing functionality
   const provider = new ethers.JsonRpcProvider(ALCHEMY_RPC_URL);
   
   try {
@@ -146,8 +276,14 @@ export default async function handler(req, res) {
     console.log(`Processing blocks ${startBlock} to ${endBlock}`);
     
     let totalEventsFound = 0;
+    let results = {
+      vaultEvents: 0,
+      tvlUpdated: false,
+      stakingGains: 0,
+      redemptionGains: 0
+    };
     
-    // Query both event types in parallel
+    // 1. Process vault events (main indexing)
     const [vaultUpdatedLogs, vaultLiquidatedLogs] = await Promise.all([
       getLogsWithRetry(provider, startBlock, endBlock, 'VaultUpdated'),
       getLogsWithRetry(provider, startBlock, endBlock, 'VaultLiquidated')
@@ -195,25 +331,45 @@ export default async function handler(req, res) {
       totalEventsFound++;
     }
     
+    results.vaultEvents = totalEventsFound;
+    
+    // 2. Update TVL snapshot (every run)
+    try {
+      const tvlData = await calculateTVL(currentBlock);
+      const tvlSaved = await saveTVLSnapshot(tvlData);
+      results.tvlUpdated = tvlSaved;
+    } catch (tvlError) {
+      console.warn('⚠️ TVL update failed:', tvlError.message);
+    }
+    
+    // 3. Cache staking and redemption gains (for API endpoints)
+    const stakingGains = await fetchStakingGainsData();
+    const redemptionGains = await fetchRedemptionGainsData();
+    results.stakingGains = stakingGains.length;
+    results.redemptionGains = redemptionGains.length;
+    
     // Update progress
     await updateLastIndexedBlock(endBlock);
     
-    console.log(`✅ Processed ${endBlock - startBlock + 1} blocks, found ${totalEventsFound} events`);
+    console.log(`✅ Processing complete - Events: ${totalEventsFound}, TVL: ${results.tvlUpdated ? 'Updated' : 'Failed'}`);
     
     return res.status(200).json({
-      message: 'Indexing completed successfully',
+      success: true,
+      message: 'Unified indexing completed successfully',
       blocksProcessed: endBlock - startBlock + 1,
-      eventsFound: totalEventsFound,
-      processedRange: `${startBlock}-${endBlock}`,
       currentBlock,
-      rpcEndpoint: 'Alchemy RSK Testnet'
+      processedRange: `${startBlock}-${endBlock}`,
+      results,
+      rpcEndpoint: 'Alchemy RSK Testnet',
+      timestamp: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error('❌ Indexing failed:', error);
+    console.error('❌ Unified indexing failed:', error);
     
     return res.status(500).json({
-      error: 'Indexing failed',
+      success: false,
+      error: 'Unified indexing failed',
       details: error.message,
       rpcEndpoint: 'Alchemy RSK Testnet'
     });

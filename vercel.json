@@ -1,15 +1,6 @@
 {
   "functions": {
-    "api/cron-indexer.js": {
-      "maxDuration": 10
-    },
     "api/alchemy-cron.js": {
-      "maxDuration": 10
-    },
-    "api/process-blocks.js": {
-      "maxDuration": 10
-    },
-    "api/tvl-tracker.js": {
       "maxDuration": 30
     }
   },

@@ -4,7 +4,17 @@
       "Bash(node:*)",
       "WebFetch(domain:docs.tatum.io)",
       "WebFetch(domain:co.tatum.io)",
-      "WebFetch(domain:www.intrinsic.network)"
+      "WebFetch(domain:www.intrinsic.network)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(chmod:*)",
+      "Bash(python3:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(pip3 install:*)",
+      "Bash(curl:*)",
+      "Bash(mv:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

@@ -237,8 +237,8 @@ def fetch_staking_gains_data(start_date, end_date):
 def fetch_staking_gains_daily():
     """Fetch daily staking gains data for issuance gain chart (last 7 days)"""
     try:
-        # Use dedicated API endpoint for daily data
-        url = 'https://mp-indexer.vercel.app/api/daily-staking-gains'
+        # Use unified API endpoint for daily data
+        url = 'https://mp-indexer.vercel.app/api/alchemy-cron/daily-staking-gains'
         
         response = requests.get(url)
         
@@ -266,8 +266,8 @@ def fetch_staking_gains_daily():
 def fetch_redemption_gains_daily():
     """Fetch daily redemption gains data (last 7 days)"""
     try:
-        # Use dedicated API endpoint for redemption gains data
-        url = 'https://mp-indexer.vercel.app/api/redemption-gains'
+        # Use unified API endpoint for redemption gains data
+        url = 'https://mp-indexer.vercel.app/api/alchemy-cron/redemption-gains'
         
         response = requests.get(url)
         
