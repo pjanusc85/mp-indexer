@@ -159,7 +159,7 @@ def fetch_vault_events(start_date, end_date, event_types):
             data = response.json()
             if data:
                 df = pd.DataFrame(data)
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601')
                 return df
             else:
                 return pd.DataFrame()
@@ -187,7 +187,7 @@ def fetch_tvl_data():
             data = response.json()
             if data:
                 df = pd.DataFrame(data)
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601')
                 return df
             else:
                 return pd.DataFrame()
@@ -213,7 +213,7 @@ def fetch_bpd_supply_data():
             data = response.json()
             if data:
                 df = pd.DataFrame(data)
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601')
                 return df
             else:
                 return pd.DataFrame()
@@ -239,7 +239,7 @@ def fetch_staking_gains_data():
             data = response.json()
             if data:
                 df = pd.DataFrame(data)
-                df['day'] = pd.to_datetime(df['day'])
+                df['day'] = pd.to_datetime(df['day'], format='ISO8601')
                 return df
             else:
                 return pd.DataFrame()
@@ -265,7 +265,7 @@ def fetch_redemption_gains_data():
             data = response.json()
             if data:
                 df = pd.DataFrame(data)
-                df['day'] = pd.to_datetime(df['day'])
+                df['day'] = pd.to_datetime(df['day'], format='ISO8601')
                 return df
             else:
                 return pd.DataFrame()
@@ -291,7 +291,7 @@ def fetch_mp_staking_data():
             data = response.json()
             if data:
                 df = pd.DataFrame(data)
-                df['hour'] = pd.to_datetime(df['hour'])
+                df['hour'] = pd.to_datetime(df['hour'], format='ISO8601')
                 df = df.fillna(0)
                 # Convert to numeric
                 df['total_mp_staked'] = pd.to_numeric(df['total_mp_staked'], errors='coerce')
