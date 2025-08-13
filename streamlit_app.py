@@ -502,6 +502,9 @@ else:
 if not staking_gains_df.empty:
     st.markdown("## 🎯 Total Gains from Staking")
     
+    # Metrics subsection
+    st.markdown("### 📊 Current Metrics")
+    
     # Get latest staking gains values
     latest_gains = staking_gains_df.iloc[-1]
     
@@ -540,8 +543,8 @@ if not staking_gains_df.empty:
         </div>
         """, unsafe_allow_html=True)
     
-    # Staking Gains Chart
-    st.markdown("### Cumulative Staking Gains Over Time")
+    # Cumulative Chart subsection
+    st.markdown("### 📈 Cumulative Staking Gains Over Time")
     if len(staking_gains_df) > 1:
         fig = go.Figure()
         
@@ -610,7 +613,8 @@ if not staking_gains_df.empty:
         
         # Daily Issuance Gain Chart (Last 7 Days)
         if not daily_gains_df.empty:
-            st.markdown("### 📊 Issuance Gain from MP Staking (Last 7 Days)")
+            st.markdown("### 📊 Daily Issuance Gain from MP Staking")
+            st.markdown("*Last 7 days - Fees generated vs gains claimed*")
             
             # Create bar chart showing daily fees vs claims
             fig_daily = go.Figure()
@@ -657,7 +661,7 @@ if not staking_gains_df.empty:
             
             # Show summary table
             if len(daily_display) > 0:
-                st.markdown("#### 📋 Daily Summary")
+                st.markdown("### 📋 Daily Summary")
                 summary_table = daily_display[['day_str', 'bpd_paid', 'bpd_claimed']].copy()
                 summary_table.columns = ['Date', 'BPD Fees Generated', 'BPD Gains Claimed']
                 summary_table['BPD Fees Generated'] = summary_table['BPD Fees Generated'].round(2)
