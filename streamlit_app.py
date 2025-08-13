@@ -262,6 +262,35 @@ def fetch_staking_gains_daily():
         st.sidebar.error(f"Error fetching daily staking gains data: {str(e)}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=60)
+def fetch_redemption_gains_daily():
+    """Fetch daily redemption gains data (last 7 days)"""
+    try:
+        # Use dedicated API endpoint for redemption gains data
+        url = 'https://mp-indexer.vercel.app/api/redemption-gains'
+        
+        response = requests.get(url)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success') and result.get('data'):
+                df = pd.DataFrame(result['data'])
+                df['day'] = pd.to_datetime(df['day'])
+                # Fill NaN values with 0
+                df = df.fillna(0)
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            # Don't show warning for 404, as table might not exist yet
+            if response.status_code != 404:
+                st.sidebar.warning(f"Redemption gains API unavailable: {response.status_code}")
+            return pd.DataFrame()
+            
+    except Exception as e:
+        st.sidebar.error(f"Error fetching redemption gains data: {str(e)}")
+        return pd.DataFrame()
+
 @st.cache_data(ttl=60)  # Cache for 1 minute  
 def fetch_vault_events(start_date, end_date, event_types):
     try:
@@ -361,6 +390,7 @@ tvl_df = fetch_tvl_data(start_date, end_date)
 bpd_df = fetch_bpd_supply_data(start_date, end_date)
 staking_gains_df = fetch_staking_gains_data(start_date, end_date)
 daily_gains_df = fetch_staking_gains_daily()
+redemption_gains_df = fetch_redemption_gains_daily()
 
 # TVL Section
 if not tvl_df.empty:
@@ -712,6 +742,70 @@ if not daily_gains_df.empty and len(daily_gains_df) > 0:
     st.dataframe(summary_table, use_container_width=True, hide_index=True)
 else:
     st.info("Daily summary will appear here when staking activity data is available.")
+
+# Redemption Gains Section
+st.markdown("## 🔄 Redemption Gain from MP Staking")
+st.markdown("### 📊 Daily BTC Redemption Gains")
+st.markdown("*Last 7 days - BTC fees from redemptions vs BTC gains claimed*")
+
+if not redemption_gains_df.empty:
+    # Create bar chart showing daily BTC redemption fees vs claims
+    fig_redemption = go.Figure()
+    
+    # Convert to display format
+    redemption_display = redemption_gains_df.copy()
+    redemption_display['day_str'] = redemption_display['day'].dt.strftime('%b %d')
+    
+    # Add bars for BTC fees from redemptions
+    fig_redemption.add_trace(go.Bar(
+        x=redemption_display['day_str'],
+        y=redemption_display['btc_paid'],
+        name='Fees generated (BTC)',
+        marker_color='#6366f1',
+        yaxis='y'
+    ))
+    
+    # Add bars for BTC gains claimed
+    fig_redemption.add_trace(go.Bar(
+        x=redemption_display['day_str'],
+        y=redemption_display['btc_claimed'],
+        name='Gains claimed (BTC)',
+        marker_color='#ef4444',
+        yaxis='y'
+    ))
+    
+    fig_redemption.update_layout(
+        title='Daily BTC Redemption Fees vs Gains Claimed',
+        xaxis_title='Date',
+        yaxis_title='BTC Amount',
+        barmode='group',
+        hovermode='x unified',
+        height=400,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    st.plotly_chart(fig_redemption, use_container_width=True)
+    
+    # Show redemption summary table
+    if len(redemption_display) > 0:
+        st.markdown("### 📋 Redemption Summary")
+        redemption_table = redemption_display[['day_str', 'btc_paid', 'btc_claimed']].copy()
+        redemption_table.columns = ['Date', 'BTC Fees Generated', 'BTC Gains Claimed']
+        redemption_table['BTC Fees Generated'] = redemption_table['BTC Fees Generated'].round(6)
+        redemption_table['BTC Gains Claimed'] = redemption_table['BTC Gains Claimed'].round(6)
+        st.dataframe(redemption_table, use_container_width=True, hide_index=True)
+else:
+    st.info("No redemption gains data available yet. Run the staking gains tracker to start collecting data.")
+    
+    # Show placeholder summary section
+    st.markdown("### 📋 Redemption Summary")
+    st.info("Redemption summary will appear here when redemption activity data is available.")
 
 # Display metrics
 st.markdown("## 📈 Key Metrics")
