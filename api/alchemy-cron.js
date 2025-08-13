@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { getMPStakingEvents, processMPStakingEvents, calculateMPStakingMetrics } from '../src/contracts/MPStaking.js';
 
 const ALCHEMY_RPC_URL = 'https://rootstock-testnet.g.alchemy.com/v2/xZF7o-Vl3z94HOqwaQtrZP06swu4_E15';
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -6,10 +7,12 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
 const CONTRACTS = {
   vaultManager: process.env.VAULT_MANAGER_ADDRESS || '0x0eccca821f078f394f2bb1f3d615ad73729a9892',
-  sortedVaults: process.env.SORTED_VAULTS_ADDRESS || '0xDBA59981bda70CCBb5458e907f5A0729F1d24a05',
+  sortedVaults: process.env.SORTED_VAULTS_ADDRESS || '0x4DdE9ddE9e084cbC59105175407137fdD7B43F7C',
   activePool: '0x061c6A8EBb521fe74d3E07c9b835A236ac051e8F',
   defaultPool: '0x9BcA57F7D3712f46cd2D650a78f68e7928e866E2',
-  stabilityPool: '0x11ad81e3E29DBA233aF88dCb4b169670FA2b8C65'
+  stabilityPool: '0x11ad81e3E29DBA233aF88dCb4b169670FA2b8C65',
+  mpStaking: process.env.MP_STAKING_ADDRESS || '0x6651E5d0C04CBefCa1ce9eDDd479BA8f7B4A6976', // Real MP staking address
+  mpToken: process.env.MP_TOKEN_ADDRESS || '0x08a181f4Fc6C78258fFbaf166f2C7326DCc3C946' // Real MP token address
 };
 
 const EVENT_SIGNATURES = {
@@ -191,6 +194,60 @@ async function fetchStakingGainsData() {
   }
 }
 
+// === MP STAKING TRACKING ===
+async function saveMPStakingData(stakingData) {
+  try {
+    if (stakingData.length === 0) return true;
+    
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/mp_staking_hourly`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(stakingData)
+    });
+
+    if (!response.ok) {
+      throw new Error(`MP staking save failed: ${response.status}`);
+    }
+
+    console.log(`✅ Saved ${stakingData.length} MP staking data points`);
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Error saving MP staking data:', error);
+    return false;
+  }
+}
+
+async function fetchMPStakingData() {
+  try {
+    const headers = {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json'
+    };
+    
+    const url = `${SUPABASE_URL}/rest/v1/mp_staking_hourly?select=*&order=hour.desc&limit=168`; // Last 7 days hourly
+    const response = await fetch(url, { headers });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`✅ Retrieved ${data.length} hours of MP staking data`);
+      return data;
+    } else {
+      console.warn('⚠️ MP staking data not available');
+      return [];
+    }
+  } catch (error) {
+    console.error('❌ Error fetching MP staking data:', error);
+    return [];
+  }
+}
+
 // === REDEMPTION GAINS DATA ===
 async function fetchRedemptionGainsData() {
   try {
@@ -251,6 +308,15 @@ export default async function handler(req, res) {
     });
   }
 
+  if (pathname.includes('mp-staking-data')) {
+    const mpStakingData = await fetchMPStakingData();
+    return res.status(200).json({
+      success: true,
+      message: `Retrieved ${mpStakingData.length} hours of MP staking data`,
+      data: mpStakingData
+    });
+  }
+
   // Default: Main indexing functionality
   const provider = new ethers.JsonRpcProvider(ALCHEMY_RPC_URL);
   
@@ -280,7 +346,8 @@ export default async function handler(req, res) {
       vaultEvents: 0,
       tvlUpdated: false,
       stakingGains: 0,
-      redemptionGains: 0
+      redemptionGains: 0,
+      mpStakingUpdated: false
     };
     
     // 1. Process vault events (main indexing)
@@ -342,7 +409,28 @@ export default async function handler(req, res) {
       console.warn('⚠️ TVL update failed:', tvlError.message);
     }
     
-    // 3. Cache staking and redemption gains (for API endpoints)
+    // 3. Process MP staking events (real contract configured)
+    try {
+      const mpStakingEvents = await getMPStakingEvents(provider, startBlock, endBlock);
+      if (mpStakingEvents.stakingEvents.length > 0 || mpStakingEvents.claimEvents.length > 0) {
+        console.log(`🎯 Found ${mpStakingEvents.stakingEvents.length} staking events and ${mpStakingEvents.claimEvents.length} claim events`);
+        const processedStaking = await processMPStakingEvents(
+          provider, 
+          mpStakingEvents.stakingEvents, 
+          mpStakingEvents.claimEvents
+        );
+        const stakingMetrics = calculateMPStakingMetrics(processedStaking);
+        const stakingSaved = await saveMPStakingData(stakingMetrics);
+        results.mpStakingUpdated = stakingSaved;
+      } else {
+        console.log('📊 No MP staking events found in this block range');
+        results.mpStakingUpdated = true; // Mark as successful even if no events
+      }
+    } catch (mpError) {
+      console.warn('⚠️ MP staking update failed:', mpError.message);
+    }
+
+    // 4. Cache staking and redemption gains (for API endpoints)
     const stakingGains = await fetchStakingGainsData();
     const redemptionGains = await fetchRedemptionGainsData();
     results.stakingGains = stakingGains.length;

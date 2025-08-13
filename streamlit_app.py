@@ -291,6 +291,33 @@ def fetch_redemption_gains_daily():
         st.sidebar.error(f"Error fetching redemption gains data: {str(e)}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=60)
+def fetch_mp_staking_data():
+    """Fetch MP staking data (equivalent to LQTY staking analytics)"""
+    try:
+        url = 'https://mp-indexer.vercel.app/api/alchemy-cron/mp-staking-data'
+        response = requests.get(url)
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success') and result.get('data'):
+                df = pd.DataFrame(result['data'])
+                df['hour'] = pd.to_datetime(df['hour'])
+                df = df.fillna(0)
+                # Convert to numeric
+                df['total_mp_staked'] = pd.to_numeric(df['total_mp_staked'], errors='coerce')
+                df['total_mp_claimed'] = pd.to_numeric(df['total_mp_claimed'], errors='coerce')
+                df['mp_claimed_in_hour'] = pd.to_numeric(df['mp_claimed_in_hour'], errors='coerce')
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            if response.status_code != 404:
+                st.sidebar.warning(f"MP staking API unavailable: {response.status_code}")
+            return pd.DataFrame()
+    except Exception as e:
+        st.sidebar.error(f"Error fetching MP staking data: {str(e)}")
+        return pd.DataFrame()
+
 @st.cache_data(ttl=60)  # Cache for 1 minute  
 def fetch_vault_events(start_date, end_date, event_types):
     try:
@@ -806,6 +833,138 @@ else:
     # Show placeholder summary section
     st.markdown("### 📋 Redemption Summary")
     st.info("Redemption summary will appear here when redemption activity data is available.")
+
+# ============================================
+# MP STAKING ANALYTICS (New Section)
+# ============================================
+st.markdown("## 🎯 MP Staking Analytics")
+st.markdown("Track total MP staked and claimed rewards over time (equivalent to Liquity's LQTY staking)")
+
+# Fetch MP staking data
+mp_staking_df = fetch_mp_staking_data()
+
+if not mp_staking_df.empty and len(mp_staking_df) > 1:
+    st.markdown("### 📈 Total MP Staked Over Time")
+    
+    # Create MP staking line chart
+    fig = px.line(
+        mp_staking_df.sort_values('hour'),
+        x='hour',
+        y='total_mp_staked',
+        title='Total MP Staked',
+        labels={'hour': 'Time', 'total_mp_staked': 'MP Staked'}
+    )
+    fig.update_layout(hovermode='x unified')
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # MP claimed analytics
+    st.markdown("### 💰 MP Claims Analytics")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Total MP claimed over time
+        fig = px.line(
+            mp_staking_df.sort_values('hour'),
+            x='hour',
+            y='total_mp_claimed',
+            title='Cumulative MP Claimed',
+            labels={'hour': 'Time', 'total_mp_claimed': 'Total MP Claimed'},
+            color_discrete_sequence=['#10b981']
+        )
+        fig.update_layout(hovermode='x unified')
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Hourly MP claims
+        hourly_claims = mp_staking_df[mp_staking_df['mp_claimed_in_hour'] > 0]
+        if not hourly_claims.empty:
+            fig = px.bar(
+                hourly_claims.sort_values('hour'),
+                x='hour',
+                y='mp_claimed_in_hour',
+                title='MP Claimed Per Hour',
+                labels={'hour': 'Time', 'mp_claimed_in_hour': 'MP Claimed'},
+                color_discrete_sequence=['#f59e0b']
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No MP claims recorded yet")
+    
+    # Combined staking and claims chart (like Dune Analytics)
+    st.markdown("### 🎯 MP Staking vs Claims (Dune-style Analytics)")
+    
+    fig = go.Figure()
+    
+    # Add total staked line
+    fig.add_trace(go.Scatter(
+        x=mp_staking_df['hour'],
+        y=mp_staking_df['total_mp_staked'],
+        mode='lines',
+        name='Total MP Staked',
+        line=dict(color='#3b82f6', width=2),
+        yaxis='y'
+    ))
+    
+    # Add total claimed line
+    fig.add_trace(go.Scatter(
+        x=mp_staking_df['hour'],
+        y=mp_staking_df['total_mp_claimed'],
+        mode='lines',
+        name='Total MP Claimed',
+        line=dict(color='#10b981', width=2),
+        yaxis='y'
+    ))
+    
+    fig.update_layout(
+        title='MP Staking Analytics (Total Staked vs Total Claimed)',
+        xaxis_title='Time',
+        yaxis_title='MP Amount',
+        hovermode='x unified',
+        legend=dict(x=0.02, y=0.98)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # MP staking summary metrics
+    st.markdown("### 📊 MP Staking Summary")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    latest_data = mp_staking_df.iloc[-1] if not mp_staking_df.empty else None
+    
+    if latest_data is not None:
+        with col1:
+            st.metric(
+                "Current MP Staked",
+                f"{latest_data['total_mp_staked']:,.2f}",
+                help="Total MP tokens currently staked"
+            )
+        
+        with col2:
+            st.metric(
+                "Total MP Claimed",
+                f"{latest_data['total_mp_claimed']:,.2f}",
+                help="Cumulative MP rewards claimed"
+            )
+        
+        with col3:
+            total_participants = len(mp_staking_df[mp_staking_df['total_mp_staked'] > 0])
+            st.metric(
+                "Active Hours",
+                f"{total_participants:,}",
+                help="Hours with active MP staking"
+            )
+        
+        with col4:
+            avg_hourly_claims = mp_staking_df['mp_claimed_in_hour'].mean()
+            st.metric(
+                "Avg Hourly Claims",
+                f"{avg_hourly_claims:.4f}",
+                help="Average MP claimed per hour"
+            )
+
+else:
+    st.info("No MP staking data available yet. The indexer will collect this data once MP staking events are detected on-chain.")
 
 # Display metrics
 st.markdown("## 📈 Key Metrics")
