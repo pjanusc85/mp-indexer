@@ -237,15 +237,19 @@ def fetch_staking_gains_data(start_date, end_date):
 def fetch_staking_gains_daily():
     """Fetch daily staking gains data for issuance gain chart (last 7 days)"""
     try:
-        # Use unified API endpoint for daily data
-        url = 'https://mp-indexer.vercel.app/api/alchemy-cron/daily-staking-gains'
+        # Fetch directly from Supabase
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
         
-        response = requests.get(url)
+        url = f'{SUPABASE_URL}/rest/v1/staking_gains_daily?select=*&order=day.desc'
+        response = requests.get(url, headers=headers)
         
         if response.status_code == 200:
-            result = response.json()
-            if result.get('success') and result.get('data'):
-                df = pd.DataFrame(result['data'])
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
                 df['day'] = pd.to_datetime(df['day'])
                 # Fill NaN values with 0
                 df = df.fillna(0)
@@ -255,7 +259,7 @@ def fetch_staking_gains_daily():
         else:
             # Don't show warning for 404, as table might not exist yet
             if response.status_code != 404:
-                st.sidebar.warning(f"Daily staking gains API unavailable: {response.status_code}")
+                st.sidebar.warning(f"Staking gains data unavailable from Supabase: {response.status_code}")
             return pd.DataFrame()
             
     except Exception as e:
@@ -266,15 +270,19 @@ def fetch_staking_gains_daily():
 def fetch_redemption_gains_daily():
     """Fetch daily redemption gains data (last 7 days)"""
     try:
-        # Use unified API endpoint for redemption gains data
-        url = 'https://mp-indexer.vercel.app/api/alchemy-cron/redemption-gains'
+        # Fetch directly from Supabase
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
         
-        response = requests.get(url)
+        url = f'{SUPABASE_URL}/rest/v1/redemption_gains_daily?select=*&order=day.desc'
+        response = requests.get(url, headers=headers)
         
         if response.status_code == 200:
-            result = response.json()
-            if result.get('success') and result.get('data'):
-                df = pd.DataFrame(result['data'])
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
                 df['day'] = pd.to_datetime(df['day'])
                 # Fill NaN values with 0
                 df = df.fillna(0)
@@ -284,7 +292,7 @@ def fetch_redemption_gains_daily():
         else:
             # Don't show warning for 404, as table might not exist yet
             if response.status_code != 404:
-                st.sidebar.warning(f"Redemption gains API unavailable: {response.status_code}")
+                st.sidebar.warning(f"Redemption gains data unavailable from Supabase: {response.status_code}")
             return pd.DataFrame()
             
     except Exception as e:
@@ -293,14 +301,21 @@ def fetch_redemption_gains_daily():
 
 @st.cache_data(ttl=60)
 def fetch_mp_staking_data():
-    """Fetch MP staking data (equivalent to LQTY staking analytics)"""
+    """Fetch MP staking data directly from Supabase (equivalent to LQTY staking analytics)"""
     try:
-        url = 'https://mp-indexer.vercel.app/api/alchemy-cron/mp-staking-data'
-        response = requests.get(url)
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        # Fetch MP staking hourly data from Supabase
+        url = f'{SUPABASE_URL}/rest/v1/mp_staking_hourly?select=*&order=hour.desc&limit=168'  # Last 7 days hourly
+        response = requests.get(url, headers=headers)
+        
         if response.status_code == 200:
-            result = response.json()
-            if result.get('success') and result.get('data'):
-                df = pd.DataFrame(result['data'])
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
                 df['hour'] = pd.to_datetime(df['hour'])
                 df = df.fillna(0)
                 # Convert to numeric
@@ -312,10 +327,10 @@ def fetch_mp_staking_data():
                 return pd.DataFrame()
         else:
             if response.status_code != 404:
-                st.sidebar.warning(f"MP staking API unavailable: {response.status_code}")
+                st.sidebar.warning(f"MP staking data unavailable from Supabase: {response.status_code}")
             return pd.DataFrame()
     except Exception as e:
-        st.sidebar.error(f"Error fetching MP staking data: {str(e)}")
+        st.sidebar.error(f"Error fetching MP staking data from Supabase: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=60)  # Cache for 1 minute  
