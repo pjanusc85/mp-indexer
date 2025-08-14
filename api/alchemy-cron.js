@@ -249,7 +249,7 @@ async function getMPStakingEventsSimple(provider, fromBlock, toBlock) {
             allMPEvents.push({
               ...log,
               eventType: eventName,
-              blockNumber: parseInt(log.blockNumber, 16)
+              blockNumber: log.blockNumber
             });
           });
           
