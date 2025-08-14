@@ -36,7 +36,7 @@ const EVENT_SIGNATURES = {
 // === VAULT EVENT INDEXING ===
 async function getLastIndexedBlock() {
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?select=last_block&contract_address=eq.${CONTRACTS.vaultManager}&order=last_updated.desc&limit=1`, {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?select=last_block&order=updated_at.desc&limit=1`, {
       headers: {
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
@@ -59,26 +59,43 @@ async function getLastIndexedBlock() {
 
 async function updateLastIndexedBlock(blockNumber) {
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state`, {
-      method: 'POST',
+    // First try to update existing record
+    const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?id=eq.1`, {
+      method: 'PATCH',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        contract_address: CONTRACTS.vaultManager,
         last_block: blockNumber,
-        last_updated: new Date().toISOString()
+        updated_at: new Date().toISOString()
       })
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    if (updateResponse.ok) {
+      console.log(`✅ Updated last processed block to ${blockNumber}`);
+    } else {
+      // If update fails, try insert
+      const insertResponse = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          last_block: blockNumber,
+          updated_at: new Date().toISOString()
+        })
+      });
+      
+      if (insertResponse.ok) {
+        console.log(`✅ Created new indexer state at block ${blockNumber}`);
+      } else {
+        throw new Error(`Both update and insert failed: ${insertResponse.status}`);
+      }
     }
-    
-    console.log(`✅ Updated last processed block to ${blockNumber}`);
   } catch (error) {
     console.error('❌ Error updating last indexed block:', error);
   }
