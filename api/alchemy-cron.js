@@ -59,8 +59,8 @@ async function getLastIndexedBlock() {
 
 async function updateLastIndexedBlock(blockNumber) {
   try {
-    // First try to update existing record
-    const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?id=eq.1`, {
+    // First try to update existing record (id=2 based on current state)
+    const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?id=eq.2`, {
       method: 'PATCH',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
@@ -76,6 +76,7 @@ async function updateLastIndexedBlock(blockNumber) {
     if (updateResponse.ok) {
       console.log(`✅ Updated last processed block to ${blockNumber}`);
     } else {
+      console.log(`⚠️ Update failed: ${updateResponse.status}`);
       // If update fails, try insert
       const insertResponse = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state`, {
         method: 'POST',
