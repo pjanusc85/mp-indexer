@@ -280,15 +280,51 @@ async function processMPStakingEventsSimple(events) {
   const currentHour = new Date();
   currentHour.setMinutes(0, 0, 0); // Round to current hour
   
-  // Create a simple record for this hour with the events - matching actual database schema
+  // Decode actual values from events
+  let totalMPStaked = 0;
+  let totalMPClaimed = 0;
+  let mpClaimedInHour = 0;
+  
+  events.forEach(event => {
+    try {
+      console.log(`🔍 Decoding event: ${event.eventType}`);
+      
+      if (event.eventType === 'MPStakeUpdate' && event.data && event.data !== '0x') {
+        // MPStakeUpdate contains the total staked amount as first data parameter
+        const dataWithoutPrefix = event.data.slice(2);
+        if (dataWithoutPrefix.length >= 64) {
+          const stakedAmount = BigInt('0x' + dataWithoutPrefix.slice(0, 64));
+          totalMPStaked = parseFloat(ethers.formatEther(stakedAmount));
+          console.log(`  💰 MP Staked: ${totalMPStaked} MP`);
+        }
+      }
+      
+      if (event.eventType === 'MPRewardUpdate' && event.data && event.data !== '0x') {
+        // MPRewardUpdate contains reward amounts
+        const dataWithoutPrefix = event.data.slice(2);
+        if (dataWithoutPrefix.length >= 64) {
+          const rewardAmount = BigInt('0x' + dataWithoutPrefix.slice(0, 64));
+          const rewardValue = parseFloat(ethers.formatEther(rewardAmount));
+          mpClaimedInHour += rewardValue;
+          totalMPClaimed += rewardValue;
+          console.log(`  🎁 MP Reward: ${rewardValue} MP`);
+        }
+      }
+      
+    } catch (error) {
+      console.warn(`⚠️ Error decoding event ${event.eventType}:`, error.message);
+    }
+  });
+  
+  // Create a record with actual decoded values
   const stakingRecord = {
     hour: currentHour.toISOString(),
-    total_mp_staked: 0, // Would need to decode event data to get actual amounts
-    mp_claimed_in_hour: 0, // Would need to decode event data to get actual amounts  
-    total_mp_claimed: 0 // Would need to decode event data to get actual amounts
+    total_mp_staked: totalMPStaked,
+    mp_claimed_in_hour: mpClaimedInHour,
+    total_mp_claimed: totalMPClaimed
   };
   
-  console.log('✅ Created MP staking record:', JSON.stringify(stakingRecord, null, 2));
+  console.log('✅ Created MP staking record with real values:', JSON.stringify(stakingRecord, null, 2));
   
   hourlyData.push(stakingRecord);
   return hourlyData;
