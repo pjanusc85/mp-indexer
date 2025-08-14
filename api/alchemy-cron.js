@@ -268,7 +268,12 @@ async function getMPStakingEventsSimple(provider, fromBlock, toBlock) {
 }
 
 async function processMPStakingEventsSimple(events) {
-  if (events.length === 0) return [];
+  if (events.length === 0) {
+    console.log('📊 No MP staking events to process');
+    return [];
+  }
+  
+  console.log(`🔄 Processing ${events.length} MP staking events...`);
   
   // Group events by hour
   const hourlyData = [];
@@ -282,17 +287,22 @@ async function processMPStakingEventsSimple(events) {
     unique_stakers: new Set(events.map(e => e.transactionHash)).size, // Estimate based on unique transactions
     total_rewards_claimed: 0,
     event_count: events.length,
-    events_by_type: {},
+    events_by_type: JSON.stringify({}), // Convert to JSON string for database compatibility
     block_range: `${Math.min(...events.map(e => e.blockNumber))}-${Math.max(...events.map(e => e.blockNumber))}`
   };
   
   // Count events by type
+  const eventTypeCount = {};
   events.forEach(event => {
-    if (!stakingRecord.events_by_type[event.eventType]) {
-      stakingRecord.events_by_type[event.eventType] = 0;
+    if (!eventTypeCount[event.eventType]) {
+      eventTypeCount[event.eventType] = 0;
     }
-    stakingRecord.events_by_type[event.eventType]++;
+    eventTypeCount[event.eventType]++;
   });
+  
+  stakingRecord.events_by_type = JSON.stringify(eventTypeCount);
+  
+  console.log('✅ Created MP staking record:', JSON.stringify(stakingRecord, null, 2));
   
   hourlyData.push(stakingRecord);
   return hourlyData;
@@ -301,7 +311,13 @@ async function processMPStakingEventsSimple(events) {
 // === MP STAKING TRACKING ===
 async function saveMPStakingData(stakingData) {
   try {
-    if (stakingData.length === 0) return true;
+    if (stakingData.length === 0) {
+      console.log('📊 No MP staking data to save');
+      return true;
+    }
+    
+    console.log(`💾 Attempting to save ${stakingData.length} MP staking records...`);
+    console.log('Data to save:', JSON.stringify(stakingData, null, 2));
     
     const response = await fetch(`${SUPABASE_URL}/rest/v1/mp_staking_hourly`, {
       method: 'POST',
@@ -315,14 +331,20 @@ async function saveMPStakingData(stakingData) {
     });
 
     if (!response.ok) {
-      throw new Error(`MP staking save failed: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`❌ MP staking save failed: ${response.status}`);
+      console.error('Response body:', errorText);
+      throw new Error(`MP staking save failed: ${response.status} - ${errorText}`);
     }
 
+    const responseData = await response.text();
     console.log(`✅ Saved ${stakingData.length} MP staking data points`);
+    console.log('Save response:', responseData);
     return true;
     
   } catch (error) {
-    console.error('❌ Error saving MP staking data:', error);
+    console.error('❌ Error saving MP staking data:', error.message);
+    console.error('Full error:', error);
     return false;
   }
 }
