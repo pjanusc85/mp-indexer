@@ -280,27 +280,13 @@ async function processMPStakingEventsSimple(events) {
   const currentHour = new Date();
   currentHour.setMinutes(0, 0, 0); // Round to current hour
   
-  // Create a simple record for this hour with the events
+  // Create a simple record for this hour with the events - matching actual database schema
   const stakingRecord = {
     hour: currentHour.toISOString(),
-    total_staked_mp: 0, // Would need to decode event data to get actual amounts
-    unique_stakers: new Set(events.map(e => e.transactionHash)).size, // Estimate based on unique transactions
-    total_rewards_claimed: 0,
-    event_count: events.length,
-    events_by_type: JSON.stringify({}), // Convert to JSON string for database compatibility
-    block_range: `${Math.min(...events.map(e => e.blockNumber))}-${Math.max(...events.map(e => e.blockNumber))}`
+    total_mp_staked: 0, // Would need to decode event data to get actual amounts
+    mp_claimed_in_hour: 0, // Would need to decode event data to get actual amounts  
+    total_mp_claimed: 0 // Would need to decode event data to get actual amounts
   };
-  
-  // Count events by type
-  const eventTypeCount = {};
-  events.forEach(event => {
-    if (!eventTypeCount[event.eventType]) {
-      eventTypeCount[event.eventType] = 0;
-    }
-    eventTypeCount[event.eventType]++;
-  });
-  
-  stakingRecord.events_by_type = JSON.stringify(eventTypeCount);
   
   console.log('✅ Created MP staking record:', JSON.stringify(stakingRecord, null, 2));
   
