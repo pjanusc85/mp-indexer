@@ -30,6 +30,11 @@ const EVENT_SIGNATURES = {
 // === VAULT EVENT INDEXING ===
 async function getLastIndexedBlock() {
   try {
+    // TEMPORARY: Force indexer to start from recent blocks to catch MP staking
+    // This will be removed after MP staking is properly indexed
+    return 6713000;
+    
+    /* Original code - temporarily disabled
     const response = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?select=last_block&contract_address=eq.${CONTRACTS.vaultManager}&order=last_updated.desc&limit=1`, {
       headers: {
         'apikey': SUPABASE_ANON_KEY,
@@ -42,10 +47,11 @@ async function getLastIndexedBlock() {
     }
 
     const data = await response.json();
-    return data.length > 0 ? data[0].last_block : 6680000; // Default start block
+    return data.length > 0 ? data[0].last_block : 6713000; // Updated to recent block to catch MP staking
+    */
   } catch (error) {
     console.error('Error getting last indexed block:', error);
-    return 6680000; // Default fallback
+    return 6713000; // Updated fallback to recent block
   }
 }
 
