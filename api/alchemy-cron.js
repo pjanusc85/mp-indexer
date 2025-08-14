@@ -1,7 +1,12 @@
 import { ethers } from 'ethers';
 import { getMPStakingEvents, processMPStakingEvents, calculateMPStakingMetrics } from '../src/contracts/MPStaking.js';
-// Note: BalanceTracker functions will be used when the balance tracking is fully deployed
-// For now, we'll use the existing TVL calculation logic
+import { 
+  getPoolBalanceChanges, 
+  calculateHourlyBalances, 
+  saveBalanceEvents, 
+  saveHourlyBalances,
+  getDetailedBalanceEvents 
+} from '../src/contracts/BalanceTracker.js';
 
 const ALCHEMY_RPC_URL = 'https://rootstock-testnet.g.alchemy.com/v2/xZF7o-Vl3z94HOqwaQtrZP06swu4_E15';
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -13,7 +18,7 @@ const CONTRACTS = {
   activePool: '0x061c6A8EBb521fe74d3E07c9b835A236ac051e8F',
   defaultPool: '0x9BcA57F7D3712f46cd2D650a78f68e7928e866E2',
   stabilityPool: '0x11ad81e3E29DBA233aF88dCb4b169670FA2b8C65',
-  mpStaking: process.env.MP_STAKING_ADDRESS || '0x6651E5d0C04CBefCa1ce9eDDd479BA8f7B4A6976', // Real MP staking address
+  mpStaking: process.env.MP_STAKING_ADDRESS || '0x9Ea9FA0e1605382aE217966173E26E2f5EE73ac6', // Updated MP staking address
   mpToken: process.env.MP_TOKEN_ADDRESS || '0x08a181f4Fc6C78258fFbaf166f2C7326DCc3C946' // Real MP token address
 };
 
@@ -500,13 +505,34 @@ export default async function handler(req, res) {
       console.warn('⚠️ MP staking update failed:', mpError.message);
     }
 
-    // 4. Enhanced balance tracking (Dune Analytics style) - TODO: Enable after schema deployment
+    // 4. Enhanced balance tracking (Dune Analytics style)
     try {
-      // For now, just mark as successful since we don't have the tables yet
-      results.balanceTrackingUpdated = true;
-      console.log('📊 Balance tracking: Ready for deployment (schema available)');
+      console.log('📊 Starting balance tracking analysis...');
+      
+      // Get pool balance changes for the current block range
+      const balanceChanges = await getPoolBalanceChanges(provider, startBlock, endBlock);
+      
+      if (balanceChanges.length > 0) {
+        console.log(`🔄 Found ${balanceChanges.length} pool balance changes`);
+        
+        // Calculate hourly aggregations
+        const currentHour = new Date();
+        currentHour.setMinutes(0, 0, 0); // Round to current hour
+        const hourlyBalances = calculateHourlyBalances(balanceChanges, currentHour.toISOString());
+        
+        // Save balance events and hourly data
+        const balanceEventsSaved = await saveBalanceEvents(balanceChanges, SUPABASE_URL, SUPABASE_ANON_KEY);
+        const hourlyBalancesSaved = await saveHourlyBalances(hourlyBalances, SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        results.balanceTrackingUpdated = balanceEventsSaved && hourlyBalancesSaved;
+        console.log(`✅ Balance tracking: ${balanceChanges.length} events, ${hourlyBalances.length} hourly records`);
+      } else {
+        console.log('📊 No significant balance changes detected in this block range');
+        results.balanceTrackingUpdated = true; // Mark as successful even if no changes
+      }
+      
     } catch (balanceError) {
-      console.warn('⚠️ Balance tracking preparation failed:', balanceError.message);
+      console.warn('⚠️ Balance tracking failed:', balanceError.message);
       results.balanceTrackingUpdated = false;
     }
 
