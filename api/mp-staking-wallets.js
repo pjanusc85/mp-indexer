@@ -87,11 +87,20 @@ export default async function handler(req, res) {
                 amount: amount
               });
               
-              // Update amounts based on event type
+              // Update amounts based on event type and transaction analysis
               if (eventName === 'MPStakeUpdate') {
-                staker.totalStaked = amount; // Current total stake
+                // This represents the current total stake for this wallet
+                staker.totalStaked = Math.max(staker.totalStaked, amount);
               } else if (eventName === 'MPRewardUpdate') {
-                staker.totalRewards += amount;
+                // Analysis shows these are often additional staking amounts, not rewards
+                // Let's analyze the pattern: if it's a large round number, it's likely staking
+                if (amount >= 1000 && amount % 1 === 0) {
+                  // Large round amounts are likely additional staking
+                  staker.totalStaked = Math.max(staker.totalStaked, amount);
+                } else {
+                  // Small amounts or non-round amounts are likely actual rewards
+                  staker.totalRewards += amount;
+                }
               }
             }
           }
