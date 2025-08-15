@@ -307,6 +307,27 @@ def fetch_mp_staking_data():
         return pd.DataFrame()
 
 @st.cache_data(ttl=60)
+def fetch_mp_staking_wallets():
+    """Fetch individual MP staking wallet breakdown from API"""
+    try:
+        url = 'https://mp-indexer.vercel.app/api/mp-staking-wallets'
+        response = requests.get(url)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success') and data.get('wallets'):
+                wallets_df = pd.DataFrame(data['wallets'])
+                summary = data.get('summary', {})
+                return wallets_df, summary
+            else:
+                return pd.DataFrame(), {}
+        else:
+            return pd.DataFrame(), {}
+    except Exception as e:
+        st.sidebar.error(f"Error fetching MP staking wallets: {str(e)}")
+        return pd.DataFrame(), {}
+
+@st.cache_data(ttl=60)
 def fetch_balance_tracking_data():
     """Fetch balance tracking data from Supabase (Dune Analytics style)"""
     try:
@@ -1053,16 +1074,26 @@ def render_redemption_gains_analytics():
 def render_mp_staking_analytics():
     """Render MP staking analytics section"""
     mp_staking_df = fetch_mp_staking_data()
-    
-    if mp_staking_df.empty:
-        st.warning("No MP staking data available yet. The indexer will collect this data once MP staking events are detected on-chain.")
-        return
+    wallets_df, summary = fetch_mp_staking_wallets()
     
     st.markdown("## 🎯 MP Staking Analytics")
-    st.markdown("Track total MP staked and claimed rewards over time (equivalent to Liquity's LQTY staking)")
+    st.markdown("Track total MP staked and individual wallet breakdown (equivalent to Liquity's LQTY staking)")
     
-    # Latest data
-    latest_data = mp_staking_df.iloc[0]  # Most recent
+    # Use real-time data from API if available, otherwise fall back to database
+    if summary:
+        current_mp_staked = summary.get('total_mp_staked', 0)
+        current_mp_rewards = summary.get('total_mp_rewards', 0)
+        total_wallets = summary.get('total_wallets', 0)
+        blocks_scanned = summary.get('blocks_scanned', 'N/A')
+    elif not mp_staking_df.empty:
+        latest_data = mp_staking_df.iloc[0]
+        current_mp_staked = latest_data['total_mp_staked']
+        current_mp_rewards = latest_data['total_mp_claimed']
+        total_wallets = 'N/A'
+        blocks_scanned = 'N/A'
+    else:
+        st.warning("No MP staking data available yet. The indexer will collect this data once MP staking events are detected on-chain.")
+        return
     
     # Metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -1070,108 +1101,219 @@ def render_mp_staking_analytics():
     with col1:
         st.metric(
             "Current MP Staked",
-            f"{latest_data['total_mp_staked']:,.2f}",
-            help="Total MP tokens currently staked"
+            f"{current_mp_staked:,.2f}",
+            help="Total MP tokens currently staked across all wallets"
         )
     
     with col2:
         st.metric(
-            "Total MP Claimed",
-            f"{latest_data['total_mp_claimed']:,.2f}",
-            help="Cumulative MP rewards claimed"
+            "Total MP Rewards",
+            f"{current_mp_rewards:,.2f}",
+            help="Total MP rewards distributed"
         )
     
     with col3:
-        total_participants = len(mp_staking_df[mp_staking_df['total_mp_staked'] > 0])
         st.metric(
-            "Active Hours",
-            f"{total_participants:,}",
-            help="Hours with active MP staking"
+            "Active Wallets",
+            f"{total_wallets:,}" if isinstance(total_wallets, (int, float)) else str(total_wallets),
+            help="Number of unique wallets staking MP"
         )
     
     with col4:
-        avg_hourly_claims = mp_staking_df['mp_claimed_in_hour'].mean()
+        if isinstance(blocks_scanned, str) and '-' in blocks_scanned:
+            start_block, end_block = blocks_scanned.split('-')
+            blocks_range = f"{int(end_block) - int(start_block):,}"
+        else:
+            blocks_range = str(blocks_scanned)
         st.metric(
-            "Avg Hourly Claims",
-            f"{avg_hourly_claims:.4f}",
-            help="Average MP claimed per hour"
+            "Blocks Scanned",
+            blocks_range,
+            help="Range of blocks scanned for staking events"
         )
     
-    # Charts
-    st.markdown("### MP Staked Over Time")
-    fig = px.line(
-        mp_staking_df.sort_values('hour'),
-        x='hour',
-        y='total_mp_staked',
-        title='Total MP Staked',
-        labels={'hour': 'Time', 'total_mp_staked': 'MP Staked'}
-    )
-    fig.update_layout(hovermode='x unified')
-    st.plotly_chart(fig, use_container_width=True)
+    # Individual Wallet Breakdown Table
+    if not wallets_df.empty:
+        st.markdown("### 👥 Individual MP Staking Wallets")
+        st.markdown("Real-time breakdown of all wallets staking MP tokens")
+        
+        # Prepare display data
+        display_df = wallets_df.copy()
+        
+        # Format wallet addresses (show first 6 and last 4 characters)
+        display_df['wallet_display'] = display_df['wallet_address'].apply(
+            lambda x: f"{x[:6]}...{x[-4:]}"
+        )
+        
+        # Create formatted display table
+        table_data = []
+        for _, row in display_df.iterrows():
+            table_data.append({
+                'Wallet': row['wallet_display'],
+                'MP Staked': f"{row['total_mp_staked']:,.0f}",
+                'Percentage': f"{row['percentage_of_total']:.2f}%",
+                'Last Activity': f"Block {row['last_activity_block']:,}",
+                'Transactions': f"{row['transaction_count']:,}",
+                'Full Address': row['wallet_address']
+            })
+        
+        table_df = pd.DataFrame(table_data)
+        
+        # Display table
+        st.dataframe(
+            table_df[['Wallet', 'MP Staked', 'Percentage', 'Last Activity', 'Transactions']],
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Pie chart of wallet distribution
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Pie chart
+            fig = px.pie(
+                wallets_df,
+                values='total_mp_staked',
+                names='wallet_display',
+                title='MP Staking Distribution by Wallet',
+                color_discrete_sequence=px.colors.qualitative.Set3
+            )
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            fig.update_layout(showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Bar chart
+            fig = px.bar(
+                wallets_df.sort_values('total_mp_staked', ascending=True),
+                x='total_mp_staked',
+                y='wallet_display',
+                orientation='h',
+                title='MP Staked by Wallet',
+                labels={'total_mp_staked': 'MP Staked', 'wallet_display': 'Wallet'},
+                color='total_mp_staked',
+                color_continuous_scale='Blues'
+            )
+            fig.update_layout(showlegend=False, yaxis={'categoryorder': 'total ascending'})
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Recent transactions
+        st.markdown("### 📋 Recent MP Staking Transactions")
+        
+        # Flatten transaction data
+        all_transactions = []
+        for _, wallet in wallets_df.iterrows():
+            wallet_display = f"{wallet['wallet_address'][:6]}...{wallet['wallet_address'][-4:]}"
+            for tx in wallet.get('recent_transactions', []):
+                all_transactions.append({
+                    'Wallet': wallet_display,
+                    'Transaction Hash': tx.get('hash', ''),
+                    'Block': tx.get('block', ''),
+                    'Event Type': tx.get('eventType', ''),
+                    'Amount': f"{tx.get('amount', 0):,.2f}",
+                    'Full Address': wallet['wallet_address']
+                })
+        
+        if all_transactions:
+            tx_df = pd.DataFrame(all_transactions)
+            tx_df = tx_df.sort_values('Block', ascending=False)
+            
+            st.dataframe(
+                tx_df[['Wallet', 'Transaction Hash', 'Block', 'Event Type', 'Amount']].head(20),
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Download button for full wallet data
+            csv = wallets_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download MP Staking Data",
+                data=csv,
+                file_name=f"mp_staking_wallets_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("No recent transaction details available")
     
-    # Combined staking and claims chart
-    st.markdown("### MP Staking vs Claims (Dune-style Analytics)")
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(
-        x=mp_staking_df['hour'],
-        y=mp_staking_df['total_mp_staked'],
-        mode='lines',
-        name='Total MP Staked',
-        line=dict(color='#3b82f6', width=2)
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=mp_staking_df['hour'],
-        y=mp_staking_df['total_mp_claimed'],
-        mode='lines',
-        name='Total MP Claimed',
-        line=dict(color='#10b981', width=2)
-    ))
-    
-    fig.update_layout(
-        title='MP Staking Analytics (Total Staked vs Total Claimed)',
-        xaxis_title='Time',
-        yaxis_title='MP Amount',
-        hovermode='x unified',
-        legend=dict(x=0.02, y=0.98)
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Claims analysis
-    st.markdown("### MP Claims Analysis")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Total MP claimed over time
+    # Time Series Charts (only show if historical data available)
+    if not mp_staking_df.empty:
+        st.markdown("---")
+        st.markdown("### 📈 Historical MP Staking Trends")
+        st.markdown("*Note: Real-time current data shown above, historical trends below*")
+        
+        st.markdown("#### MP Staked Over Time")
         fig = px.line(
             mp_staking_df.sort_values('hour'),
             x='hour',
-            y='total_mp_claimed',
-            title='Cumulative MP Claimed',
-            labels={'hour': 'Time', 'total_mp_claimed': 'Total MP Claimed'},
-            color_discrete_sequence=['#10b981']
+            y='total_mp_staked',
+            title='Total MP Staked',
+            labels={'hour': 'Time', 'total_mp_staked': 'MP Staked'}
         )
         fig.update_layout(hovermode='x unified')
         st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        # Hourly MP claims
-        hourly_claims = mp_staking_df[mp_staking_df['mp_claimed_in_hour'] > 0]
-        if not hourly_claims.empty:
-            fig = px.bar(
-                hourly_claims.sort_values('hour'),
+        
+        # Combined staking and claims chart
+        st.markdown("#### MP Staking vs Claims (Dune-style Analytics)")
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=mp_staking_df['hour'],
+            y=mp_staking_df['total_mp_staked'],
+            mode='lines',
+            name='Total MP Staked',
+            line=dict(color='#3b82f6', width=2)
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=mp_staking_df['hour'],
+            y=mp_staking_df['total_mp_claimed'],
+            mode='lines',
+            name='Total MP Claimed',
+            line=dict(color='#10b981', width=2)
+        ))
+        
+        fig.update_layout(
+            title='MP Staking Analytics (Total Staked vs Total Claimed)',
+            xaxis_title='Time',
+            yaxis_title='MP Amount',
+            hovermode='x unified',
+            legend=dict(x=0.02, y=0.98)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Claims analysis
+        st.markdown("#### MP Claims Analysis")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Total MP claimed over time
+            fig = px.line(
+                mp_staking_df.sort_values('hour'),
                 x='hour',
-                y='mp_claimed_in_hour',
-                title='MP Claimed Per Hour',
-                labels={'hour': 'Time', 'mp_claimed_in_hour': 'MP Claimed'},
-                color_discrete_sequence=['#f59e0b']
+                y='total_mp_claimed',
+                title='Cumulative MP Claimed',
+                labels={'hour': 'Time', 'total_mp_claimed': 'Total MP Claimed'},
+                color_discrete_sequence=['#10b981']
             )
+            fig.update_layout(hovermode='x unified')
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No MP claims recorded yet")
+        
+        with col2:
+            # Hourly MP claims
+            hourly_claims = mp_staking_df[mp_staking_df['mp_claimed_in_hour'] > 0]
+            if not hourly_claims.empty:
+                fig = px.bar(
+                    hourly_claims.sort_values('hour'),
+                    x='hour',
+                    y='mp_claimed_in_hour',
+                    title='MP Claimed Per Hour',
+                    labels={'hour': 'Time', 'mp_claimed_in_hour': 'MP Claimed'},
+                    color_discrete_sequence=['#f59e0b']
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No MP claims recorded yet")
 
 # ===========================================
 # MAIN CONTENT RENDERING
