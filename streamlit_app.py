@@ -1223,30 +1223,36 @@ def render_mp_staking_analytics():
             
             # Recent transactions
             st.markdown("### 📋 Recent MP Staking Transactions")
-        
-        # Flatten transaction data
-        all_transactions = []
-        for _, wallet in wallets_df.iterrows():
-            wallet_display = f"{wallet['wallet_address'][:6]}...{wallet['wallet_address'][-4:]}"
-            for tx in wallet.get('recent_transactions', []):
-                all_transactions.append({
-                    'Wallet': wallet_display,
-                    'Transaction Hash': tx.get('hash', ''),
-                    'Block': tx.get('block', ''),
-                    'Event Type': tx.get('eventType', ''),
-                    'Amount': f"{tx.get('amount', 0):,.2f}",
-                    'Full Address': wallet['wallet_address']
-                })
-        
-        if all_transactions:
-            tx_df = pd.DataFrame(all_transactions)
-            tx_df = tx_df.sort_values('Block', ascending=False)
             
-            st.dataframe(
-                tx_df[['Wallet', 'Transaction Hash', 'Block', 'Event Type', 'Amount']].head(20),
-                use_container_width=True,
-                hide_index=True
-            )
+            try:
+                # Flatten transaction data
+                all_transactions = []
+                for _, wallet in wallets_df.iterrows():
+                    wallet_display = f"{wallet['wallet_address'][:6]}...{wallet['wallet_address'][-4:]}"
+                    for tx in wallet.get('recent_transactions', []):
+                        all_transactions.append({
+                            'Wallet': wallet_display,
+                            'Transaction Hash': tx.get('hash', ''),
+                            'Block': tx.get('block', ''),
+                            'Event Type': tx.get('eventType', ''),
+                            'Amount': f"{tx.get('amount', 0):,.2f}",
+                            'Full Address': wallet['wallet_address']
+                        })
+                
+                if all_transactions:
+                    tx_df = pd.DataFrame(all_transactions)
+                    tx_df = tx_df.sort_values('Block', ascending=False)
+                    
+                    st.dataframe(
+                        tx_df[['Wallet', 'Transaction Hash', 'Block', 'Event Type', 'Amount']].head(20),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                else:
+                    st.info("No recent transactions found")
+            except Exception as e:
+                st.error(f"Error processing transaction data: {str(e)}")
+                st.write("Available wallet data:", wallets_df.columns.tolist())
             
             # Download button for full wallet data
             csv = wallets_df.to_csv(index=False)
@@ -1256,8 +1262,6 @@ def render_mp_staking_analytics():
                 file_name=f"mp_staking_wallets_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv"
             )
-        else:
-            st.info("No recent transaction details available")
                 
         except Exception as e:
             st.error(f"Error processing MP staking wallet data: {str(e)}")
