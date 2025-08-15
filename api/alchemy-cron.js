@@ -267,16 +267,17 @@ async function getMPStakingEventsSimple(provider, fromBlock, toBlock) {
   }
 }
 
-async function processMPStakingEventsSimple(events) {
+async function processMPStakingEventsSimple(events, provider) {
   if (events.length === 0) {
     console.log('📊 No MP staking events to process');
-    return [];
+    return { hourlyData: [], individualEvents: [] };
   }
   
   console.log(`🔄 Processing ${events.length} MP staking events...`);
   
   // Group events by hour
   const hourlyData = [];
+  const individualEvents = [];
   const currentHour = new Date();
   currentHour.setMinutes(0, 0, 0); // Round to current hour
   
@@ -285,17 +286,36 @@ async function processMPStakingEventsSimple(events) {
   let totalMPClaimed = 0;
   let mpClaimedInHour = 0;
   
-  events.forEach(event => {
+  for (const event of events) {
     try {
-      console.log(`🔍 Decoding event: ${event.eventType}`);
+      console.log(`🔍 Decoding event: ${event.eventType} in block ${event.blockNumber}`);
+      
+      // Get block timestamp and transaction details
+      let blockTimestamp = new Date();
+      let fromAddress = null;
+      let toAddress = null;
+      
+      try {
+        const block = await provider.getBlock(event.blockNumber);
+        blockTimestamp = new Date(block.timestamp * 1000);
+        
+        const tx = await provider.getTransaction(event.transactionHash);
+        fromAddress = tx.from;
+        toAddress = tx.to;
+      } catch (txError) {
+        console.warn(`Could not get transaction details for ${event.transactionHash}:`, txError.message);
+      }
+      
+      let eventAmount = 0;
       
       if (event.eventType === 'MPStakeUpdate' && event.data && event.data !== '0x') {
         // MPStakeUpdate contains the total staked amount as first data parameter
         const dataWithoutPrefix = event.data.slice(2);
         if (dataWithoutPrefix.length >= 64) {
           const stakedAmount = BigInt('0x' + dataWithoutPrefix.slice(0, 64));
-          totalMPStaked = parseFloat(ethers.formatEther(stakedAmount));
-          console.log(`  💰 MP Staked: ${totalMPStaked} MP`);
+          eventAmount = parseFloat(ethers.formatEther(stakedAmount));
+          totalMPStaked = eventAmount; // Current total stake
+          console.log(`  💰 MP Staked: ${eventAmount} MP`);
         }
       }
       
@@ -304,17 +324,34 @@ async function processMPStakingEventsSimple(events) {
         const dataWithoutPrefix = event.data.slice(2);
         if (dataWithoutPrefix.length >= 64) {
           const rewardAmount = BigInt('0x' + dataWithoutPrefix.slice(0, 64));
-          const rewardValue = parseFloat(ethers.formatEther(rewardAmount));
-          mpClaimedInHour += rewardValue;
-          totalMPClaimed += rewardValue;
-          console.log(`  🎁 MP Reward: ${rewardValue} MP`);
+          eventAmount = parseFloat(ethers.formatEther(rewardAmount));
+          mpClaimedInHour += eventAmount;
+          totalMPClaimed += eventAmount;
+          console.log(`  🎁 MP Reward: ${eventAmount} MP`);
         }
       }
+      
+      // Save individual event to database
+      const individualEvent = {
+        event_type: event.eventType,
+        block_number: event.blockNumber,
+        transaction_hash: event.transactionHash,
+        timestamp: blockTimestamp.toISOString(),
+        total_mp_staked: event.eventType === 'MPStakeUpdate' ? eventAmount : null,
+        amount_claimed: event.eventType === 'MPRewardUpdate' ? eventAmount : null,
+        from_address: fromAddress,
+        to_address: toAddress,
+        log_index: event.logIndex || 0,
+        processed_at: new Date().toISOString()
+      };
+      
+      individualEvents.push(individualEvent);
+      console.log(`  📝 Prepared individual event: ${event.eventType} - ${eventAmount} MP`);
       
     } catch (error) {
       console.warn(`⚠️ Error decoding event ${event.eventType}:`, error.message);
     }
-  });
+  }
   
   // Create a record with actual decoded values
   const stakingRecord = {
@@ -325,12 +362,49 @@ async function processMPStakingEventsSimple(events) {
   };
   
   console.log('✅ Created MP staking record with real values:', JSON.stringify(stakingRecord, null, 2));
+  console.log(`✅ Created ${individualEvents.length} individual event records`);
   
   hourlyData.push(stakingRecord);
-  return hourlyData;
+  return { hourlyData, individualEvents };
 }
 
 // === MP STAKING TRACKING ===
+async function saveMPStakingEvents(eventData) {
+  try {
+    if (eventData.length === 0) {
+      console.log('📊 No MP staking events to save');
+      return true;
+    }
+    
+    console.log(`💾 Attempting to save ${eventData.length} MP staking event records...`);
+    
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/mp_staking_events`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(eventData)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ MP staking events save failed: ${response.status}`);
+      console.error('Response body:', errorText);
+      throw new Error(`MP staking events save failed: ${response.status} - ${errorText}`);
+    }
+
+    console.log(`✅ Saved ${eventData.length} MP staking event records`);
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Error saving MP staking events:', error.message);
+    return false;
+  }
+}
+
 async function saveMPStakingData(stakingData) {
   try {
     if (stakingData.length === 0) {
@@ -446,6 +520,115 @@ async function fetchCurrentBalances() {
   }
 }
 
+async function fetchMPStakingWalletBreakdown(provider) {
+  try {
+    console.log('👥 Fetching MP staking wallet breakdown...');
+    
+    // Query recent blocks for MP staking events
+    const currentBlock = await provider.getBlockNumber();
+    const startBlock = Math.max(currentBlock - 10000, 6713000); // Look back 10k blocks or start from known MP staking block
+    const endBlock = currentBlock;
+    
+    console.log(`🔍 Scanning blocks ${startBlock} to ${endBlock} for MP staking events...`);
+    
+    const allStakers = new Map();
+    
+    // Get all MP staking events from recent blocks
+    for (const [eventName, signature] of Object.entries(EVENT_SIGNATURES)) {
+      if (eventName.startsWith('MP')) {
+        try {
+          const logs = await provider.getLogs({
+            address: CONTRACTS.mpStaking,
+            topics: [signature],
+            fromBlock: `0x${startBlock.toString(16)}`,
+            toBlock: `0x${endBlock.toString(16)}`
+          });
+          
+          console.log(`   Found ${logs.length} ${eventName} events`);
+          
+          for (const log of logs) {
+            let stakerAddress = null;
+            let amount = 0;
+            
+            // Get transaction to find staker address
+            try {
+              const tx = await provider.getTransaction(log.transactionHash);
+              stakerAddress = tx.from;
+            } catch (e) {
+              console.warn(`Could not get transaction for ${log.transactionHash}`);
+              continue;
+            }
+            
+            // Extract amount from data
+            if (log.data && log.data !== '0x') {
+              try {
+                const dataWithoutPrefix = log.data.slice(2);
+                if (dataWithoutPrefix.length >= 64) {
+                  const firstValue = BigInt('0x' + dataWithoutPrefix.slice(0, 64));
+                  amount = parseFloat(ethers.formatEther(firstValue));
+                }
+              } catch (e) {
+                // Skip if can't decode
+              }
+            }
+            
+            // Record staker data
+            if (stakerAddress && stakerAddress !== '0x0000000000000000000000000000000000000000') {
+              if (!allStakers.has(stakerAddress)) {
+                allStakers.set(stakerAddress, {
+                  address: stakerAddress,
+                  totalStaked: 0,
+                  totalRewards: 0,
+                  lastActivity: log.blockNumber,
+                  transactionCount: 0
+                });
+              }
+              
+              const staker = allStakers.get(stakerAddress);
+              staker.lastActivity = Math.max(staker.lastActivity, log.blockNumber);
+              staker.transactionCount++;
+              
+              // Update amounts based on event type
+              if (eventName === 'MPStakeUpdate') {
+                staker.totalStaked = amount; // Current total stake
+              } else if (eventName === 'MPRewardUpdate') {
+                staker.totalRewards += amount;
+              }
+            }
+          }
+          
+        } catch (error) {
+          console.warn(`Could not fetch ${eventName} events:`, error.message);
+        }
+      }
+    }
+    
+    // Convert to array and sort by total staked
+    const walletBreakdown = Array.from(allStakers.values()).map(staker => ({
+      wallet_address: staker.address,
+      total_mp_staked: staker.totalStaked,
+      total_mp_rewards: staker.totalRewards,
+      last_activity_block: staker.lastActivity,
+      transaction_count: staker.transactionCount,
+      percentage_of_total: 0 // Will calculate below
+    })).sort((a, b) => b.total_mp_staked - a.total_mp_staked);
+    
+    // Calculate percentages
+    const totalStaked = walletBreakdown.reduce((sum, w) => sum + w.total_mp_staked, 0);
+    walletBreakdown.forEach(wallet => {
+      wallet.percentage_of_total = totalStaked > 0 ? (wallet.total_mp_staked / totalStaked * 100) : 0;
+    });
+    
+    console.log(`✅ Found ${walletBreakdown.length} MP staking wallets with total ${totalStaked.toLocaleString()} MP staked`);
+    
+    return walletBreakdown;
+    
+  } catch (error) {
+    console.error('❌ Error fetching MP staking wallet breakdown:', error);
+    return [];
+  }
+}
+
 // === REDEMPTION GAINS DATA ===
 async function fetchRedemptionGainsData() {
   try {
@@ -483,12 +666,15 @@ export default async function handler(req, res) {
     });
   }
 
-  // Handle different endpoints based on URL path
+  // Handle different endpoints based on URL path or query parameters
   const url = new URL(req.url, `https://${req.headers.host}`);
   const pathname = url.pathname;
+  const endpoint = url.searchParams.get('endpoint') || pathname;
+  
+  console.log(`🔍 URL Debug: pathname='${pathname}', endpoint='${endpoint}', query=${JSON.stringify(Object.fromEntries(url.searchParams))}`);
 
   // API endpoint routing
-  if (pathname.includes('daily-staking-gains')) {
+  if (endpoint.includes('daily-staking-gains')) {
     const stakingData = await fetchStakingGainsData();
     return res.status(200).json({
       success: true,
@@ -497,7 +683,7 @@ export default async function handler(req, res) {
     });
   }
 
-  if (pathname.includes('redemption-gains')) {
+  if (endpoint.includes('redemption-gains')) {
     const redemptionData = await fetchRedemptionGainsData();
     return res.status(200).json({
       success: true,
@@ -506,7 +692,7 @@ export default async function handler(req, res) {
     });
   }
 
-  if (pathname.includes('mp-staking-data')) {
+  if (endpoint.includes('mp-staking-data')) {
     const mpStakingData = await fetchMPStakingData();
     return res.status(200).json({
       success: true,
@@ -515,7 +701,7 @@ export default async function handler(req, res) {
     });
   }
 
-  if (pathname.includes('balance-tracking-data')) {
+  if (endpoint.includes('balance-tracking-data')) {
     const balanceTrackingData = await fetchBalanceTrackingData();
     return res.status(200).json({
       success: true,
@@ -524,12 +710,22 @@ export default async function handler(req, res) {
     });
   }
 
-  if (pathname.includes('current-balances')) {
+  if (endpoint.includes('current-balances')) {
     const currentBalances = await fetchCurrentBalances();
     return res.status(200).json({
       success: true,
       message: `Retrieved current balances for ${currentBalances.length} pools`,
       data: currentBalances
+    });
+  }
+
+  if (endpoint.includes('mp-staking-wallets')) {
+    const provider = new ethers.JsonRpcProvider(ALCHEMY_RPC_URL);
+    const walletBreakdown = await fetchMPStakingWalletBreakdown(provider);
+    return res.status(200).json({
+      success: true,
+      message: `Retrieved MP staking data for ${walletBreakdown.length} wallets`,
+      data: walletBreakdown
     });
   }
 
@@ -632,11 +828,16 @@ export default async function handler(req, res) {
         console.log(`🎯 Found ${mpStakingEvents.length} MP staking events!`);
         console.log(`   Event types: ${mpStakingEvents.map(e => e.eventType).join(', ')}`);
         
-        const processedStaking = await processMPStakingEventsSimple(mpStakingEvents);
-        const stakingSaved = await saveMPStakingData(processedStaking);
-        results.mpStakingUpdated = stakingSaved;
+        const { hourlyData, individualEvents } = await processMPStakingEventsSimple(mpStakingEvents, provider);
         
-        console.log(`✅ MP staking events processed and saved: ${stakingSaved}`);
+        // Save both hourly aggregated data and individual events
+        const hourlyDataSaved = await saveMPStakingData(hourlyData);
+        const individualEventsSaved = await saveMPStakingEvents(individualEvents);
+        
+        results.mpStakingUpdated = hourlyDataSaved && individualEventsSaved;
+        
+        console.log(`✅ MP staking processed: ${hourlyData.length} hourly records, ${individualEvents.length} individual events`);
+        console.log(`✅ Save results: hourly=${hourlyDataSaved}, events=${individualEventsSaved}`);
       } else {
         console.log('📊 No MP staking events found in this block range');
         results.mpStakingUpdated = true; // Mark as successful even if no events
