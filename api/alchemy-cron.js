@@ -309,36 +309,34 @@ async function processMPStakingEventsSimple(events, provider) {
       let eventAmount = 0;
       
       if (event.eventType === 'MPStakeUpdate' && event.data && event.data !== '0x') {
-        // MPStakeUpdate contains the total staked amount as first data parameter
+        // MPStakeUpdate contains system totals, not individual amounts - skip for aggregation
         const dataWithoutPrefix = event.data.slice(2);
         if (dataWithoutPrefix.length >= 64) {
-          const stakedAmount = BigInt('0x' + dataWithoutPrefix.slice(0, 64));
-          eventAmount = parseFloat(ethers.formatEther(stakedAmount));
-          totalMPStaked = eventAmount; // Current total stake
-          console.log(`  💰 MP Staked: ${eventAmount} MP`);
+          const systemTotal = BigInt('0x' + dataWithoutPrefix.slice(0, 64));
+          eventAmount = parseFloat(ethers.formatEther(systemTotal));
+          console.log(`  📊 System Total: ${eventAmount} MP (not used for individual tracking)`);
         }
       }
       
       if (event.eventType === 'MPRewardUpdate' && event.data && event.data !== '0x') {
-        // MPRewardUpdate contains reward amounts
+        // MPRewardUpdate contains individual staking amounts (corrected logic)
         const dataWithoutPrefix = event.data.slice(2);
         if (dataWithoutPrefix.length >= 64) {
-          const rewardAmount = BigInt('0x' + dataWithoutPrefix.slice(0, 64));
-          eventAmount = parseFloat(ethers.formatEther(rewardAmount));
-          mpClaimedInHour += eventAmount;
-          totalMPClaimed += eventAmount;
-          console.log(`  🎁 MP Reward: ${eventAmount} MP`);
+          const stakingAmount = BigInt('0x' + dataWithoutPrefix.slice(0, 64));
+          eventAmount = parseFloat(ethers.formatEther(stakingAmount));
+          totalMPStaked += eventAmount; // Add individual staking amounts
+          console.log(`  💰 Individual MP Stake: ${eventAmount} MP`);
         }
       }
       
-      // Save individual event to database
+      // Save individual event to database (corrected logic)
       const individualEvent = {
         event_type: event.eventType,
         block_number: event.blockNumber,
         transaction_hash: event.transactionHash,
         timestamp: blockTimestamp.toISOString(),
-        total_mp_staked: event.eventType === 'MPStakeUpdate' ? eventAmount : null,
-        amount_claimed: event.eventType === 'MPRewardUpdate' ? eventAmount : null,
+        total_mp_staked: event.eventType === 'MPRewardUpdate' ? eventAmount : null, // MPRewardUpdate has individual stakes
+        amount_claimed: null, // No actual reward claims in these events
         from_address: fromAddress,
         to_address: toAddress,
         log_index: event.logIndex || 0,
