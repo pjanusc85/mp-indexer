@@ -71,6 +71,7 @@ export default async function handler(req, res) {
                   address: stakerAddress,
                   totalStaked: 0,
                   totalRewards: 0,
+                  systemTotal: 0,
                   lastActivity: log.blockNumber,
                   transactionCount: 0,
                   transactions: []
@@ -87,23 +88,15 @@ export default async function handler(req, res) {
                 amount: amount
               });
               
-              // Update amounts based on event type and transaction analysis
+              // Update amounts based on corrected event analysis
+              // Based on user feedback: MPRewardUpdate contains the actual staked amounts
               if (eventName === 'MPStakeUpdate') {
-                // This represents the current total stake for this wallet
-                staker.totalStaked = amount;
+                // MPStakeUpdate appears to be cumulative system totals, not individual stakes
+                // We'll use this as a reference but not the primary staking amount
+                staker.systemTotal = amount;
               } else if (eventName === 'MPRewardUpdate') {
-                // Analysis shows these are often additional staking amounts, not rewards
-                // Let's analyze the pattern: if it's a large round number, it's likely staking
-                if (amount >= 1000 && amount % 1 === 0) {
-                  // Large round amounts are likely the TOTAL staking amount, not additional
-                  // Only update if this is larger than current stake (shouldn't double count)
-                  if (amount > staker.totalStaked) {
-                    staker.totalStaked = amount;
-                  }
-                } else {
-                  // Small amounts or non-round amounts are likely actual rewards
-                  staker.totalRewards += amount;
-                }
+                // MPRewardUpdate actually contains the individual wallet's staking amount
+                staker.totalStaked = amount;
               }
             }
           }
