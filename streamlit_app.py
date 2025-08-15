@@ -1136,68 +1136,93 @@ def render_mp_staking_analytics():
         st.markdown("### 👥 Individual MP Staking Wallets")
         st.markdown("Real-time breakdown of all wallets staking MP tokens")
         
-        # Prepare display data
-        display_df = wallets_df.copy()
+        try:
+            # Prepare display data
+            display_df = wallets_df.copy()
+            
+            # Debug: Show column names
+            st.write("Debug - Available columns:", list(wallets_df.columns))
+            
+            # Format wallet addresses (show first 6 and last 4 characters)
+            if 'wallet_address' in display_df.columns:
+                display_df['wallet_display'] = display_df['wallet_address'].apply(
+                    lambda x: f"{x[:6]}...{x[-4:]}"
+                )
+            else:
+                st.error("Missing 'wallet_address' column in API response")
+                return
         
-        # Format wallet addresses (show first 6 and last 4 characters)
-        display_df['wallet_display'] = display_df['wallet_address'].apply(
-            lambda x: f"{x[:6]}...{x[-4:]}"
-        )
-        
-        # Create formatted display table
-        table_data = []
-        for _, row in display_df.iterrows():
-            table_data.append({
-                'Wallet': row['wallet_display'],
-                'MP Staked': f"{row['total_mp_staked']:,.0f}",
-                'Percentage': f"{row['percentage_of_total']:.2f}%",
-                'Last Activity': f"Block {row['last_activity_block']:,}",
-                'Transactions': f"{row['transaction_count']:,}",
-                'Full Address': row['wallet_address']
-            })
-        
-        table_df = pd.DataFrame(table_data)
-        
-        # Display table
-        st.dataframe(
-            table_df[['Wallet', 'MP Staked', 'Percentage', 'Last Activity', 'Transactions']],
-            use_container_width=True,
-            hide_index=True
-        )
-        
-        # Pie chart of wallet distribution
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Pie chart
-            fig = px.pie(
-                wallets_df,
-                values='total_mp_staked',
-                names='wallet_display',
-                title='MP Staking Distribution by Wallet',
-                color_discrete_sequence=px.colors.qualitative.Set3
+            # Create formatted display table
+            table_data = []
+            required_columns = ['total_mp_staked', 'percentage_of_total', 'last_activity_block', 'transaction_count']
+            
+            # Check if all required columns exist
+            missing_columns = [col for col in required_columns if col not in display_df.columns]
+            if missing_columns:
+                st.error(f"Missing required columns: {missing_columns}")
+                st.write("Available data:", display_df.head())
+                return
+            
+            for _, row in display_df.iterrows():
+                table_data.append({
+                    'Wallet': row['wallet_display'],
+                    'MP Staked': f"{row['total_mp_staked']:,.0f}",
+                    'Percentage': f"{row['percentage_of_total']:.2f}%",
+                    'Last Activity': f"Block {row['last_activity_block']:,}",
+                    'Transactions': f"{row['transaction_count']:,}",
+                    'Full Address': row['wallet_address']
+                })
+            
+            table_df = pd.DataFrame(table_data)
+            
+            # Display table
+            st.dataframe(
+                table_df[['Wallet', 'MP Staked', 'Percentage', 'Last Activity', 'Transactions']],
+                use_container_width=True,
+                hide_index=True
             )
-            fig.update_traces(textposition='inside', textinfo='percent+label')
-            fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
         
-        with col2:
-            # Bar chart
-            fig = px.bar(
-                wallets_df.sort_values('total_mp_staked', ascending=True),
-                x='total_mp_staked',
-                y='wallet_display',
-                orientation='h',
-                title='MP Staked by Wallet',
-                labels={'total_mp_staked': 'MP Staked', 'wallet_display': 'Wallet'},
-                color='total_mp_staked',
-                color_continuous_scale='Blues'
-            )
-            fig.update_layout(showlegend=False, yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Recent transactions
-        st.markdown("### 📋 Recent MP Staking Transactions")
+            # Pie chart of wallet distribution
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Pie chart
+                try:
+                    fig = px.pie(
+                        display_df,
+                        values='total_mp_staked',
+                        names='wallet_display',
+                        title='MP Staking Distribution by Wallet',
+                        color_discrete_sequence=px.colors.qualitative.Set3
+                    )
+                    fig.update_traces(textposition='inside', textinfo='percent+label')
+                    fig.update_layout(showlegend=False)
+                    st.plotly_chart(fig, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error creating pie chart: {str(e)}")
+                    st.write("Data for pie chart:", display_df[['wallet_display', 'total_mp_staked']].head())
+            
+            with col2:
+                # Bar chart
+                try:
+                    fig = px.bar(
+                        display_df.sort_values('total_mp_staked', ascending=True),
+                        x='total_mp_staked',
+                        y='wallet_display',
+                        orientation='h',
+                        title='MP Staked by Wallet',
+                        labels={'total_mp_staked': 'MP Staked', 'wallet_display': 'Wallet'},
+                        color='total_mp_staked',
+                        color_continuous_scale='Blues'
+                    )
+                    fig.update_layout(showlegend=False, yaxis={'categoryorder': 'total ascending'})
+                    st.plotly_chart(fig, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error creating bar chart: {str(e)}")
+                    st.write("Data for bar chart:", display_df[['wallet_display', 'total_mp_staked']].head())
+            
+            # Recent transactions
+            st.markdown("### 📋 Recent MP Staking Transactions")
         
         # Flatten transaction data
         all_transactions = []
@@ -1233,6 +1258,13 @@ def render_mp_staking_analytics():
             )
         else:
             st.info("No recent transaction details available")
+                
+        except Exception as e:
+            st.error(f"Error processing MP staking wallet data: {str(e)}")
+            st.write("Raw API response:", summary)
+            st.write("Wallets dataframe shape:", wallets_df.shape if not wallets_df.empty else "Empty")
+    else:
+        st.info("No MP staking wallet data available. Wallets will appear here once staking events are detected.")
     
     # Time Series Charts (only show if historical data available)
     if not mp_staking_df.empty:
