@@ -132,8 +132,13 @@ async function saveVaultEvent(eventData) {
 }
 
 async function getLogsWithRetry(provider, fromBlock, toBlock, eventType, maxRetries = 3) {
+  // VaultUpdated events come from BorrowerOperations, VaultLiquidated from VaultManager
+  const contractAddress = eventType === 'VaultUpdated' 
+    ? CONTRACTS.borrowerOperations 
+    : CONTRACTS.vaultManager;
+    
   const filter = {
-    address: CONTRACTS.vaultManager,
+    address: contractAddress,
     topics: [EVENT_SIGNATURES[eventType]],
     fromBlock: `0x${fromBlock.toString(16)}`,
     toBlock: `0x${toBlock.toString(16)}`
