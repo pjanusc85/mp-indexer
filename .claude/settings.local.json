@@ -14,7 +14,10 @@
       "Bash(pip3 install:*)",
       "Bash(curl:*)",
       "Bash(mv:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(pip3 list:*)",
+      "Bash(pkill:*)",
+      "Read(//Users/Paulcalinawa/Desktop/**)"
     ],
     "deny": []
   }

@@ -198,6 +198,44 @@ def fetch_tvl_data():
         return pd.DataFrame()
 
 @st.cache_data(ttl=60)
+def fetch_enhanced_tvl_data():
+    """Fetch enhanced TVL data with cumulative calculations (Dune style)"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        # Try to get data from enhanced TVL table (if it exists)
+        url = f'{SUPABASE_URL}/rest/v1/tvl_snapshots?select=*&order=timestamp.asc&limit=1000'
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                
+                # Calculate cumulative values (like Dune query)
+                df = df.sort_values('timestamp')
+                df['cumulative_btc'] = df['active_pool_btc'].cumsum()  # Cumulative BTC
+                
+                # Add USD calculation if price data available
+                df['cumulative_usd'] = df['cumulative_btc'] * 65000  # Mock BTC price
+                
+                # Rename for consistency with Dune query
+                df = df.rename(columns={'timestamp': 'time'})
+                
+                return df[['time', 'cumulative_btc', 'cumulative_usd', 'active_pool_btc']].copy()
+            else:
+                return pd.DataFrame()
+        else:
+            return pd.DataFrame()
+    except Exception as e:
+        st.sidebar.error(f"Error fetching enhanced TVL data: {str(e)}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=60)
 def fetch_bpd_supply_data():
     """Fetch BPD supply data from Supabase"""
     try:
@@ -326,6 +364,126 @@ def fetch_mp_staking_wallets():
     except Exception as e:
         st.sidebar.error(f"Error fetching MP staking wallets: {str(e)}")
         return pd.DataFrame(), {}
+
+@st.cache_data(ttl=60)
+def fetch_bpd_supply_hourly_data():
+    """Fetch hourly BPD supply data with cumulative calculations (Dune style)"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        # Try to get hourly BPD supply data
+        url = f'{SUPABASE_URL}/rest/v1/bpd_supply_hourly?select=*&order=hour.asc&limit=1000'
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['hour'] = pd.to_datetime(df['hour'])
+                
+                # Ensure cumulative supply calculation
+                if 'cumulative_supply' not in df.columns:
+                    df = df.sort_values('hour')
+                    df['cumulative_supply'] = df['supply_change'].cumsum()
+                
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            return pd.DataFrame()
+    except Exception as e:
+        st.sidebar.error(f"Error fetching hourly BPD supply data: {str(e)}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=60)
+def fetch_bpd_transfer_events():
+    """Fetch BPD transfer events (mint/burn)"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        url = f'{SUPABASE_URL}/rest/v1/bpd_transfer_events?select=*&order=block_timestamp.desc&limit=200'
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['block_timestamp'] = pd.to_datetime(df['block_timestamp'])
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            return pd.DataFrame()
+    except Exception as e:
+        st.sidebar.error(f"Error fetching BPD transfer events: {str(e)}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=60)
+def fetch_vault_count_hourly_data():
+    """Fetch hourly vault count data with cumulative calculations (Dune style)"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        # Get hourly vault count data
+        url = f'{SUPABASE_URL}/rest/v1/vault_count_hourly?select=*&order=hour.asc&limit=1000'
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['hour'] = pd.to_datetime(df['hour'])
+                
+                # Ensure cumulative vault count calculation
+                if 'number_of_vaults' not in df.columns:
+                    df = df.sort_values('hour')
+                    df['number_of_vaults'] = df['vault_count_change'].cumsum()
+                    # Ensure non-negative values
+                    df['number_of_vaults'] = df['number_of_vaults'].clip(lower=0)
+                
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            return pd.DataFrame()
+    except Exception as e:
+        st.sidebar.error(f"Error fetching vault count data: {str(e)}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=60)
+def fetch_vault_lifecycle_events():
+    """Fetch vault lifecycle events (creation/closure/liquidation)"""
+    try:
+        headers = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+        }
+        
+        url = f'{SUPABASE_URL}/rest/v1/vault_lifecycle_events?select=*&order=block_timestamp.desc&limit=200'
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                df = pd.DataFrame(data)
+                df['block_timestamp'] = pd.to_datetime(df['block_timestamp'])
+                return df
+            else:
+                return pd.DataFrame()
+        else:
+            return pd.DataFrame()
+    except Exception as e:
+        st.sidebar.error(f"Error fetching vault lifecycle events: {str(e)}")
+        return pd.DataFrame()
 
 @st.cache_data(ttl=60)
 def fetch_balance_tracking_data():
@@ -514,7 +672,7 @@ def render_vault_analytics():
         st.metric("Liquidations", f"{stats['total_liquidations']:,}")
     
     # Create tabs for different views
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 Trends", "🏆 Top Vaults", "🔍 Event Details", "📋 Raw Data"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Trends", "🏆 Top Vaults", "📊 Number of Vaults (Dune Style)", "🔍 Event Details", "📋 Raw Data"])
     
     with tab1:
         col1, col2 = st.columns(2)
@@ -587,6 +745,111 @@ def render_vault_analytics():
             st.plotly_chart(fig, use_container_width=True)
     
     with tab3:
+        # Number of Vaults - Dune Analytics style
+        st.markdown("### 📊 Number of Vaults")
+        st.markdown("Cumulative count of active vaults over time - equivalent to Liquity's Number of Troves")
+        
+        # Fetch vault count data
+        vault_count_df = fetch_vault_count_hourly_data()
+        
+        if vault_count_df.empty:
+            st.warning("⚠️ No vault count data available yet")
+            st.info("💡 Run the vault count tracker to collect data: `node run-vault-count-tracker.js`")
+            
+            # Show sample data structure
+            with st.expander("📋 Expected Data Structure"):
+                sample_data = pd.DataFrame({
+                    'hour': ['2024-01-01 00:00:00', '2024-01-01 01:00:00'],
+                    'vault_count_change': [3, -1],
+                    'number_of_vaults': [3, 2],
+                    'created_count': [3, 0],
+                    'closed_count': [0, 1]
+                })
+                st.dataframe(sample_data)
+        else:
+            # Create Dune-style chart
+            fig = go.Figure()
+            
+            # Add vault count line (blue like Dune)
+            fig.add_trace(go.Scatter(
+                x=vault_count_df['hour'],
+                y=vault_count_df['number_of_vaults'],
+                mode='lines',
+                name='Number of Vaults',
+                line=dict(color='#3b82f6', width=2),
+                hovertemplate='<b>Number of Vaults</b><br>%{y:,.0f} vaults<br>%{x}<extra></extra>'
+            ))
+            
+            # Style like Dune Analytics
+            fig.update_layout(
+                title={
+                    'text': 'Number of Vaults',
+                    'x': 0.02,
+                    'font': {'size': 16, 'color': '#374151'}
+                },
+                xaxis=dict(
+                    title='',
+                    showgrid=True,
+                    gridwidth=1,
+                    gridcolor='rgba(128,128,128,0.2)',
+                    showline=False,
+                    zeroline=False
+                ),
+                yaxis=dict(
+                    title='Vaults',
+                    showgrid=True,
+                    gridwidth=1,
+                    gridcolor='rgba(128,128,128,0.2)',
+                    showline=False,
+                    zeroline=False
+                ),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                hovermode='x unified',
+                height=500,
+                margin=dict(l=0, r=0, t=40, b=0)
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Vault count metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                current_vaults = vault_count_df['number_of_vaults'].iloc[-1]
+                st.metric("Current Vaults", f"{current_vaults:,.0f}")
+            with col2:
+                if len(vault_count_df) > 1:
+                    prev_vaults = vault_count_df['number_of_vaults'].iloc[-2]
+                    change = current_vaults - prev_vaults
+                    st.metric("Last Change", f"{change:+,.0f}")
+                else:
+                    st.metric("Last Change", "N/A")
+            with col3:
+                max_vaults = vault_count_df['number_of_vaults'].max()
+                st.metric("All-Time High", f"{max_vaults:,.0f}")
+            with col4:
+                total_created = vault_count_df['created_count'].sum()
+                st.metric("Total Created", f"{total_created:,.0f}")
+            
+            # Recent vault activity
+            st.markdown("### Recent Vault Activity")
+            recent_df = vault_count_df.tail(10).copy()
+            recent_df['hour'] = pd.to_datetime(recent_df['hour']).dt.strftime('%Y-%m-%d %H:%M')
+            display_cols = ['hour', 'number_of_vaults', 'vault_count_change', 'created_count', 'closed_count', 'liquidated_count']
+            available_cols = [col for col in display_cols if col in recent_df.columns]
+            st.dataframe(recent_df[available_cols], use_container_width=True)
+            
+            # Vault lifecycle events
+            lifecycle_df = fetch_vault_lifecycle_events()
+            if not lifecycle_df.empty:
+                st.markdown("### Recent Vault Events")
+                recent_events = lifecycle_df.head(10).copy()
+                recent_events['block_timestamp'] = recent_events['block_timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                display_cols = ['block_timestamp', 'event_type', 'vault_address', 'collateral_amount', 'debt_amount', 'transaction_hash']
+                available_cols = [col for col in display_cols if col in recent_events.columns]
+                st.dataframe(recent_events[available_cols], use_container_width=True)
+    
+    with tab4:
         # Recent events
         st.markdown("### Recent Events")
         
@@ -613,7 +876,7 @@ def render_vault_analytics():
             </div>
             """, unsafe_allow_html=True)
     
-    with tab4:
+    with tab5:
         # Raw data
         st.markdown("### Raw Event Data")
         st.info(f"Showing {len(df)} events")
@@ -770,9 +1033,130 @@ def render_tvl_analytics():
                 st.info("Balance tracking data will appear here once the enhanced indexer runs")
     
     with tab3:
-        # Balance tracking data (Dune Analytics style)
-        st.markdown("### 📊 Balance Tracking Analytics (Dune Style)")
-        st.markdown("Detailed hourly balance changes and trends equivalent to Dune Analytics queries")
+        # Enhanced TVL Analysis - Dune Style
+        st.markdown("### 📊 Total Value Locked (Dune Analytics Style)")
+        st.markdown("Cumulative RBTC flows to/from Active Pool, excluding Stability Pool - similar to Liquity on Ethereum")
+        
+        # Fetch enhanced TVL data
+        enhanced_tvl_df = fetch_enhanced_tvl_data()
+        
+        if enhanced_tvl_df.empty:
+            st.warning("⚠️ No enhanced TVL data available yet")
+            st.info("💡 Run the TVL tracker to collect cumulative flow data: `node run-tvl-tracker-enhanced.js`")
+            
+            # Show sample data structure
+            with st.expander("📋 Expected Data Structure"):
+                sample_data = pd.DataFrame({
+                    'time': ['2024-01-01 00:00:00', '2024-01-01 01:00:00'],
+                    'cumulative_btc': [1.2345, 1.2456], 
+                    'cumulative_usd': [75000, 78000],
+                    'active_pool_btc': [1.2345, 0.0111]
+                })
+                st.dataframe(sample_data)
+        else:
+            # Create dual-axis chart like Dune Analytics
+            fig = go.Figure()
+            
+            # Add BTC line (left axis) - Orange like Dune
+            fig.add_trace(go.Scatter(
+                x=enhanced_tvl_df['time'],
+                y=enhanced_tvl_df['cumulative_btc'],
+                mode='lines',
+                name='RBTC',
+                line=dict(color='#f97316', width=2),
+                yaxis='y',
+                hovertemplate='<b>RBTC</b><br>%{y:.4f} RBTC<br>%{x}<extra></extra>'
+            ))
+            
+            # Add USD line (right axis) - Blue like Dune
+            if 'cumulative_usd' in enhanced_tvl_df.columns and not enhanced_tvl_df['cumulative_usd'].isna().all():
+                fig.add_trace(go.Scatter(
+                    x=enhanced_tvl_df['time'],
+                    y=enhanced_tvl_df['cumulative_usd'],
+                    mode='lines',
+                    name='USD',
+                    line=dict(color='#3b82f6', width=2),
+                    yaxis='y2',
+                    hovertemplate='<b>USD</b><br>$%{y:,.0f}<br>%{x}<extra></extra>'
+                ))
+            
+            # Style like Dune Analytics
+            fig.update_layout(
+                title={
+                    'text': 'Total Value Locked (excluding Stability Pool)',
+                    'x': 0.02,
+                    'font': {'size': 16, 'color': '#374151'}
+                },
+                xaxis=dict(
+                    title='',
+                    showgrid=True,
+                    gridwidth=1,
+                    gridcolor='rgba(128,128,128,0.2)',
+                    showline=False,
+                    zeroline=False
+                ),
+                yaxis=dict(
+                    title='RBTC',
+                    side='left',
+                    color='#f97316',
+                    showgrid=True,
+                    gridwidth=1,
+                    gridcolor='rgba(128,128,128,0.2)',
+                    showline=False,
+                    zeroline=False
+                ),
+                yaxis2=dict(
+                    title='USD',
+                    side='right',
+                    overlaying='y',
+                    color='#3b82f6',
+                    showgrid=False,
+                    showline=False,
+                    zeroline=False
+                ),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                hovermode='x unified',
+                height=500,
+                margin=dict(l=0, r=0, t=40, b=0),
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # TVL metrics summary
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                current_tvl = enhanced_tvl_df['cumulative_btc'].iloc[-1]
+                st.metric("Current TVL", f"{current_tvl:.4f} RBTC")
+            with col2:
+                if len(enhanced_tvl_df) > 1:
+                    prev_tvl = enhanced_tvl_df['cumulative_btc'].iloc[-2]
+                    change = current_tvl - prev_tvl
+                    st.metric("Last Change", f"{change:+.4f} RBTC")
+                else:
+                    st.metric("Last Change", "N/A")
+            with col3:
+                max_tvl = enhanced_tvl_df['cumulative_btc'].max()
+                st.metric("All-Time High", f"{max_tvl:.4f} RBTC")
+            with col4:
+                data_points = len(enhanced_tvl_df)
+                st.metric("Data Points", f"{data_points:,}")
+            
+            # Recent data table
+            st.markdown("### Recent TVL Data")
+            recent_df = enhanced_tvl_df.tail(10).copy()
+            recent_df['time'] = pd.to_datetime(recent_df['time']).dt.strftime('%Y-%m-%d %H:%M')
+            recent_df = recent_df.round(6)
+            st.dataframe(recent_df, use_container_width=True)
+        
+        # Balance tracking data (existing functionality)
         
         if not balance_tracking_df.empty:
             # Balance tracking metrics
@@ -880,68 +1264,190 @@ def render_tvl_analytics():
 
 def render_bpd_analytics():
     """Render BPD analytics section"""
-    bpd_df = fetch_bpd_supply_data()
-    
-    if bpd_df.empty:
-        st.warning("No BPD supply data available yet. The indexer will collect this data during regular operations.")
-        return
-    
-    # Get latest supply
-    latest_supply = bpd_df.iloc[0]  # Most recent
-    
     st.markdown("## 🪙 BPD Supply Analytics")
     
-    # Supply metrics
-    col1, col2, col3, col4 = st.columns(4)
+    # Create tabs for different BPD analytics
+    tab1, tab2, tab3 = st.tabs(["📈 Total BPD Supply (Dune Style)", "📊 Supply Metrics", "🔄 Mint/Burn Events"])
     
-    with col1:
-        st.metric(
-            "Current Supply",
-            f"{latest_supply['total_supply_bpd']:,.2f}",
-            help="Total BPD tokens in circulation"
-        )
-    
-    with col2:
-        if len(bpd_df) > 1:
-            prev_supply = bpd_df.iloc[1]['total_supply_bpd']
-            supply_change = latest_supply['total_supply_bpd'] - prev_supply
-            st.metric(
-                "Recent Change",
-                f"{supply_change:+,.2f}",
-                help="Change since last snapshot"
-            )
+    with tab1:
+        # Dune Analytics style BPD supply chart
+        st.markdown("### Total BPD Supply")
+        st.markdown("Cumulative BPD token supply based on mint/burn events - equivalent to Liquity's LUSD supply tracking")
+        
+        # Fetch hourly supply data
+        hourly_df = fetch_bpd_supply_hourly_data()
+        
+        if hourly_df.empty:
+            st.warning("⚠️ No BPD supply data available yet")
+            st.info("💡 Run the BPD supply tracker to collect data: `node run-bpd-supply-tracker.js`")
+            
+            # Show sample data structure
+            with st.expander("📋 Expected Data Structure"):
+                sample_data = pd.DataFrame({
+                    'hour': ['2024-01-01 00:00:00', '2024-01-01 01:00:00'],
+                    'supply_change': [1000.0, 500.0],
+                    'cumulative_supply': [1000.0, 1500.0],
+                    'mint_count': [2, 1],
+                    'burn_count': [0, 0]
+                })
+                st.dataframe(sample_data)
         else:
-            st.metric("Recent Change", "N/A")
+            # Create Dune-style chart
+            fig = go.Figure()
+            
+            # Add BPD supply line (blue like Dune)
+            fig.add_trace(go.Scatter(
+                x=hourly_df['hour'],
+                y=hourly_df['cumulative_supply'],
+                mode='lines',
+                name='BPD Supply',
+                line=dict(color='#3b82f6', width=2),
+                hovertemplate='<b>BPD Supply</b><br>%{y:,.2f} BPD<br>%{x}<extra></extra>'
+            ))
+            
+            # Style like Dune Analytics
+            fig.update_layout(
+                title={
+                    'text': 'Total BPD Supply',
+                    'x': 0.02,
+                    'font': {'size': 16, 'color': '#374151'}
+                },
+                xaxis=dict(
+                    title='',
+                    showgrid=True,
+                    gridwidth=1,
+                    gridcolor='rgba(128,128,128,0.2)',
+                    showline=False,
+                    zeroline=False
+                ),
+                yaxis=dict(
+                    title='BPD',
+                    showgrid=True,
+                    gridwidth=1,
+                    gridcolor='rgba(128,128,128,0.2)',
+                    showline=False,
+                    zeroline=False
+                ),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                hovermode='x unified',
+                height=500,
+                margin=dict(l=0, r=0, t=40, b=0)
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Supply metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                current_supply = hourly_df['cumulative_supply'].iloc[-1]
+                st.metric("Current Supply", f"{current_supply:,.2f} BPD")
+            with col2:
+                if len(hourly_df) > 1:
+                    prev_supply = hourly_df['cumulative_supply'].iloc[-2]
+                    change = current_supply - prev_supply
+                    st.metric("Last Change", f"{change:+,.2f} BPD")
+                else:
+                    st.metric("Last Change", "N/A")
+            with col3:
+                max_supply = hourly_df['cumulative_supply'].max()
+                st.metric("All-Time High", f"{max_supply:,.2f} BPD")
+            with col4:
+                total_hours = len(hourly_df)
+                st.metric("Data Points", f"{total_hours:,}")
     
-    with col3:
-        # Calculate max supply if available
-        max_supply = bpd_df['total_supply_bpd'].max()
-        st.metric(
-            "Max Supply",
-            f"{max_supply:,.2f}",
-            help="Maximum supply recorded"
-        )
+    with tab2:
+        # Traditional supply metrics
+        bpd_df = fetch_bpd_supply_data()
+        
+        if not bpd_df.empty:
+            latest_supply = bpd_df.iloc[0]
+            
+            # Supply metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric(
+                    "Current Supply",
+                    f"{latest_supply['total_supply_bpd']:,.2f}",
+                    help="Total BPD tokens in circulation"
+                )
+            
+            with col2:
+                if len(bpd_df) > 1:
+                    prev_supply = bpd_df.iloc[1]['total_supply_bpd']
+                    supply_change = latest_supply['total_supply_bpd'] - prev_supply
+                    st.metric(
+                        "Recent Change",
+                        f"{supply_change:+,.2f}",
+                        help="Change since last snapshot"
+                    )
+                else:
+                    st.metric("Recent Change", "N/A")
+            
+            with col3:
+                max_supply = bpd_df['total_supply_bpd'].max()
+                st.metric(
+                    "Max Supply",
+                    f"{max_supply:,.2f}",
+                    help="Maximum supply recorded"
+                )
+            
+            with col4:
+                min_supply = bpd_df['total_supply_bpd'].min()
+                st.metric(
+                    "Min Supply", 
+                    f"{min_supply:,.2f}",
+                    help="Minimum supply recorded"
+                )
+            
+            # Traditional supply chart
+            st.markdown("### BPD Supply Over Time")
+            fig = px.line(
+                bpd_df.sort_values('timestamp'),
+                x='timestamp',
+                y='total_supply_bpd',
+                title='BPD Token Supply Over Time',
+                labels={'timestamp': 'Time', 'total_supply_bpd': 'BPD Supply'}
+            )
+            fig.update_layout(hovermode='x unified')
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No traditional BPD supply data available")
     
-    with col4:
-        # Calculate min supply
-        min_supply = bpd_df['total_supply_bpd'].min()
-        st.metric(
-            "Min Supply",
-            f"{min_supply:,.2f}",
-            help="Minimum supply recorded"
-        )
-    
-    # Supply chart
-    st.markdown("### BPD Supply Over Time")
-    fig = px.line(
-        bpd_df.sort_values('timestamp'),
-        x='timestamp',
-        y='total_supply_bpd',
-        title='BPD Token Supply Over Time',
-        labels={'timestamp': 'Time', 'total_supply_bpd': 'BPD Supply'}
-    )
-    fig.update_layout(hovermode='x unified')
-    st.plotly_chart(fig, use_container_width=True)
+    with tab3:
+        # Mint/Burn events
+        st.markdown("### Mint and Burn Events")
+        
+        events_df = fetch_bpd_transfer_events()
+        
+        if not events_df.empty:
+            # Event summary
+            col1, col2, col3, col4 = st.columns(4)
+            
+            mint_events = events_df[events_df['event_type'] == 'mint']
+            burn_events = events_df[events_df['event_type'] == 'burn']
+            
+            with col1:
+                st.metric("Total Mint Events", f"{len(mint_events):,}")
+            with col2:
+                st.metric("Total Burn Events", f"{len(burn_events):,}")
+            with col3:
+                total_minted = mint_events['value_bpd'].sum() if len(mint_events) > 0 else 0
+                st.metric("Total Minted", f"{total_minted:,.2f} BPD")
+            with col4:
+                total_burned = burn_events['value_bpd'].sum() if len(burn_events) > 0 else 0
+                st.metric("Total Burned", f"{total_burned:,.2f} BPD")
+            
+            # Recent events table
+            st.markdown("### Recent Transfer Events")
+            recent_events = events_df.head(20).copy()
+            recent_events['block_timestamp'] = recent_events['block_timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            recent_events = recent_events[['block_timestamp', 'event_type', 'value_bpd', 'transaction_hash', 'block_number']]
+            st.dataframe(recent_events, use_container_width=True)
+        else:
+            st.warning("No BPD transfer events available yet")
+            st.info("Run the BPD supply tracker to collect mint/burn events")
 
 def render_staking_gains_analytics():
     """Render staking gains analytics section"""
