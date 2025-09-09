@@ -17,9 +17,11 @@ const CONTRACTS = {
   borrowerOperations: process.env.BORROWER_OPERATIONS_ADDRESS || '0xf721a6c73676628Bb708Ee6Cfe7f9e2328a020eF',
   sortedVaults: process.env.SORTED_VAULTS_ADDRESS || '0x045cf0431C72AA2bcF100f730e3226Ef4dbF7486',
   activePool: process.env.ACTIVE_POOL_ADDRESS || '0x4C02Dc259a09B759Ef20013697d4465203f8Fac0',
+  defaultPool: process.env.DEFAULT_POOL_ADDRESS || '0x8E2646c8fEF01a0Bb94c5836717E571C772De1B9',
   stabilityPool: process.env.STABILITY_POOL_ADDRESS || '0xdA30a81004d4530e4C632D3Fa11F53558dB6209b',
   mpStaking: process.env.MP_STAKING_ADDRESS || '0x614720C2D9dA3e2eC10F1214bD9e8Cb0fe06123D',
-  mpToken: process.env.MP_TOKEN_ADDRESS || '0x411a65a1db8693529Dbb3bbf13814B4464EbcE97B'
+  mpToken: process.env.MP_TOKEN_ADDRESS || '0x411a65a1db8693529Dbb3bbf13814B4464EbcE97B',
+  bpdToken: process.env.BPD_TOKEN_ADDRESS || '0x8E2646c8fEF01a0Bb94c5836717E571C772De1B9'
 };
 
 const EVENT_SIGNATURES = {
@@ -202,6 +204,84 @@ async function saveTVLSnapshot(tvlData) {
     
   } catch (error) {
     console.error('❌ Error saving TVL snapshot:', error);
+    return false;
+  }
+}
+
+// === BPD SUPPLY TRACKING ===
+async function calculateBPDSupply(blockNumber) {
+  try {
+    console.log(`🪙 Calculating BPD supply for block ${blockNumber}`);
+    const provider = new ethers.JsonRpcProvider(ALCHEMY_RPC_URL);
+    
+    // ERC-20 ABI for totalSupply and balanceOf
+    const ERC20_ABI = [
+      'function totalSupply() external view returns (uint256)',
+      'function balanceOf(address account) external view returns (uint256)'
+    ];
+    
+    const bpdContract = new ethers.Contract(CONTRACTS.bpdToken, ERC20_ABI, provider);
+    
+    const [totalSupply, stabilityPoolBalance] = await Promise.all([
+      bpdContract.totalSupply(),
+      bpdContract.balanceOf(CONTRACTS.stabilityPool)
+    ]);
+    
+    const totalSupplyBPD = parseFloat(ethers.formatEther(totalSupply));
+    const stabilityPoolBPD = parseFloat(ethers.formatEther(stabilityPoolBalance));
+    const stabilityPoolPercentage = (stabilityPoolBPD / totalSupplyBPD) * 100;
+    
+    console.log(`   Total Supply: ${totalSupplyBPD} BPD`);
+    console.log(`   Stability Pool: ${stabilityPoolBPD} BPD (${stabilityPoolPercentage.toFixed(1)}%)`);
+    
+    return {
+      block_number: blockNumber,
+      total_supply_bpd: totalSupplyBPD,
+      timestamp: new Date().toISOString(),
+      // Additional data for logging (not saved to DB)
+      stability_pool_bpd: stabilityPoolBPD,
+      stability_pool_percentage: stabilityPoolPercentage
+    };
+    
+  } catch (error) {
+    console.error('❌ Error calculating BPD supply:', error);
+    throw error;
+  }
+}
+
+async function saveBPDSupplySnapshot(bpdData) {
+  try {
+    console.log(`💾 Saving BPD supply snapshot: ${bpdData.total_supply_bpd} BPD total, ${bpdData.stability_pool_bpd.toFixed(2)} BPD in SP`);
+    
+    // Only save schema-compatible fields
+    const dbData = {
+      block_number: bpdData.block_number,
+      total_supply_bpd: bpdData.total_supply_bpd,
+      timestamp: bpdData.timestamp
+    };
+    
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/bpd_supply_snapshots`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(dbData)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ BPD supply save failed: ${response.status} - ${errorText}`);
+      throw new Error(`BPD supply save failed: ${response.status}`);
+    }
+
+    console.log('✅ BPD supply snapshot saved');
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Error saving BPD supply snapshot:', error);
     return false;
   }
 }
@@ -850,7 +930,21 @@ export default async function handler(req, res) {
       results.mpStakingUpdated = false;
     }
 
-    // 4. Enhanced balance tracking (Dune Analytics style)
+    // 4. BPD Supply Tracking
+    try {
+      const bpdData = await calculateBPDSupply(currentBlock);
+      const bpdSaved = await saveBPDSupplySnapshot(bpdData);
+      results.bpdSupplyUpdated = bpdSaved;
+      
+      if (bpdSaved) {
+        console.log(`✅ BPD supply tracking: ${bpdData.total_supply_bpd} BPD total, ${bpdData.stability_pool_bpd.toFixed(0)} BPD in SP (${bpdData.stability_pool_percentage.toFixed(1)}%)`);
+      }
+    } catch (bpdError) {
+      console.warn('⚠️ BPD supply update failed:', bpdError.message);
+      results.bpdSupplyUpdated = false;
+    }
+
+    // 5. Enhanced balance tracking (Dune Analytics style)
     try {
       console.log('📊 Starting balance tracking analysis...');
       
