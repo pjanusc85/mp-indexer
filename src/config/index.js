@@ -35,7 +35,7 @@ export const config = {
   
   // Indexer Configuration
   indexer: {
-    startBlock: process.env.START_BLOCK || 'latest',
+    startBlock: process.env.START_BLOCK || '6801519',
     pollInterval: parseInt(process.env.POLL_INTERVAL) || 12000, // 12 seconds
     batchSize: parseInt(process.env.BATCH_SIZE) || 100,
     maxRetries: parseInt(process.env.MAX_RETRIES) || 3,

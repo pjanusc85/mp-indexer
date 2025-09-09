@@ -17,7 +17,9 @@
       "Bash(rm:*)",
       "Bash(pip3 list:*)",
       "Bash(pkill:*)",
-      "Read(//Users/Paulcalinawa/Desktop/**)"
+      "Read(//Users/Paulcalinawa/Desktop/**)",
+      "WebFetch(domain:explorer.testnet.rsk.co)",
+      "WebFetch(domain:explorer.testnet.rootstock.io)"
     ],
     "deny": []
   }
