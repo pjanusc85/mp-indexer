@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     
     // Query recent blocks for MP staking events
     const currentBlock = await provider.getBlockNumber();
-    const startBlock = Math.max(currentBlock - 10000, 6801519); // Look back 10k blocks or start from latest deployment block
+    const startBlock = Math.max(currentBlock - 10000, 6801509); // Look back 10k blocks or start from minimum deployment block
     const endBlock = currentBlock;
     
     console.log(`🔍 Scanning blocks ${startBlock} to ${endBlock} for MP staking events...`);
