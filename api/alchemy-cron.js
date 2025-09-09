@@ -59,8 +59,8 @@ async function getLastIndexedBlock() {
 
 async function updateLastIndexedBlock(blockNumber) {
   try {
-    // First try to update existing record (id=2 based on current state)
-    const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?id=eq.2`, {
+    // First try to update existing record (id=1 based on current state)
+    const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/indexer_state?id=eq.1`, {
       method: 'PATCH',
       headers: {
         'apikey': SUPABASE_ANON_KEY,
